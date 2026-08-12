@@ -15,7 +15,15 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
     function loadVoices() {
       let allVoices = window.speechSynthesis?.getVoices() || [];
       let ptVoices = allVoices.filter(v => v.lang === "pt-BR" || v.lang === "pt_BR" || v.lang === "pt");
-      setVoices(ptVoices);
+      let edgeVoices = [
+        { name: "edge:pt-BR-FranciscaNeural", localService: false, isEdge: true },
+        { name: "edge:pt-BR-AntonioNeural", localService: false, isEdge: true },
+        { name: "edge:pt-BR-ThalitaNeural", localService: false, isEdge: true },
+        { name: "edge:pt-BR-ValerioNeural", localService: false, isEdge: true },
+        { name: "edge:pt-BR-ManuelaNeural", localService: false, isEdge: true },
+        { name: "edge:pt-BR-NicolauNeural", localService: false, isEdge: true }
+      ];
+      setVoices([...edgeVoices, ...ptVoices]);
       let current = getTTSVoiceName();
       setSelectedVoice(current || "");
     }
@@ -293,7 +301,12 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
                 className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-violet transition-colors text-white",
                 children: [
                   (0, u.jsx)("option", { value: "", children: "Automática (melhor disponível)" }),
-                  voices.map(v => (0, u.jsx)("option", { value: v.name, children: v.name + (v.localService ? " (local)" : " (remota)") }, v.name))
+                  voices.map(v => {
+                    let label = v.isEdge
+                      ? v.name.replace("edge:", "").replace("pt-BR-", "").replace("Neural", " (Neural)")
+                      : v.name + (v.localService ? " (local)" : " (navegador)");
+                    return (0, u.jsx)("option", { value: v.name, children: label }, v.name);
+                  })
                 ]
               }) : (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/60 font-mono", children: "Nenhuma voz em português encontrada no navegador." }),
               (0, u.jsx)("button", {

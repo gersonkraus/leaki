@@ -267,4 +267,3 @@ document.head.appendChild(eg);
     }, {})
   })
 );
-</script>

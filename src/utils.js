@@ -81,17 +81,32 @@ function getTTSVoiceName() {
   return _ttsVoiceName;
 }
 
-function speakWordTTS(text) {
-  if (!text || !("speechSynthesis" in window)) return;
+async function speakWordTTS(text) {
+  if (!text) return;
   try {
-    window.speechSynthesis.cancel();
-    let utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "pt-BR";
-    utter.rate = 0.88;
-    let voice = pickBestVoice();
-    if (voice) utter.voice = voice;
-    window.speechSynthesis.speak(utter);
-  } catch (e) {}
+    if (_ttsVoiceName && _ttsVoiceName.startsWith("edge:")) {
+      let voiceId = _ttsVoiceName.replace("edge:", "");
+      let resp = await fetch("/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: voiceId })
+      });
+      if (!resp.ok) throw new Error("TTS failed");
+      let blob = await resp.blob();
+      let url = URL.createObjectURL(blob);
+      let audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } else {
+      window.speechSynthesis.cancel();
+      let utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "pt-BR";
+      utter.rate = 0.88;
+      let voice = pickBestVoice();
+      if (voice) utter.voice = voice;
+      window.speechSynthesis.speak(utter);
+    }
+  } catch (e) { console.error("TTS error:", e); }
 }
 
 async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, modelName) {
