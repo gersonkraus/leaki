@@ -4,10 +4,26 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
     [geminiModel, setGeminiModel] = (0, c.useState)(aiCfg?.geminiModel || "gemini-2.0-flash"),
     [provider, setProvider] = (0, c.useState)(aiCfg?.provider || "native"),
     [savedMsg, setSavedMsg] = (0, c.useState)(null),
+    [voices, setVoices] = (0, c.useState)([]),
+    [selectedVoice, setSelectedVoice] = (0, c.useState)(""),
     r = e.reduce((e, t) => e + (t.durationSeconds || 0), 0),
     a = e.reduce((e, t) => e + (t.totalReviews || 0), 0),
     l = e.reduce((e, t) => e + (t.correctCount || 0), 0),
     i = a > 0 ? Math.round((l / a) * 100) : 0;
+
+  (0, c.useEffect)(() => {
+    function loadVoices() {
+      let allVoices = window.speechSynthesis?.getVoices() || [];
+      let ptVoices = allVoices.filter(v => v.lang === "pt-BR" || v.lang === "pt_BR" || v.lang === "pt");
+      setVoices(ptVoices);
+      let current = getTTSVoiceName();
+      setSelectedVoice(current || "");
+    }
+    loadVoices();
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
 
   function o(e) {
     if (!e || e < 60) return (e || 0) + "s";
@@ -259,6 +275,35 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
               })
             ]
           }) : null,
+          (0, u.jsxs)("div", {
+            className: "space-y-2 pt-2 border-t border-base-line",
+            children: [
+              (0, u.jsxs)("div", {
+                children: [
+                  (0, u.jsx)("label", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Voz do TTS (Português BR)" }),
+                  (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/70 mt-0.5", children: "Escolha a voz usada para ler palavras em voz alta quando não há áudio gravado." })
+                ]
+              }),
+              voices.length > 0 ? (0, u.jsxs)("select", {
+                value: selectedVoice,
+                onChange: e => {
+                  setSelectedVoice(e.target.value);
+                  setTTSVoice(e.target.value);
+                },
+                className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-violet transition-colors text-white",
+                children: [
+                  (0, u.jsx)("option", { value: "", children: "Automática (melhor disponível)" }),
+                  voices.map(v => (0, u.jsx)("option", { value: v.name, children: v.name + (v.localService ? " (local)" : " (remota)") }, v.name))
+                ]
+              }) : (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/60 font-mono", children: "Nenhuma voz em português encontrada no navegador." }),
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => { speakWordTTS("Olá! Esta é uma demonstração da voz selecionada."); },
+                className: "font-mono text-[10px] px-3 py-1.5 rounded-lg border border-base-line text-ink-soft hover:text-violet-light hover:border-violet transition-colors",
+                children: "🔊 Testar voz"
+              })
+            ]
+          }),
           savedMsg ? (0, u.jsx)("div", { className: "p-2 rounded-lg bg-teal-dim text-teal font-mono text-xs", children: savedMsg }) : null,
           (0, u.jsx)("div", {
             className: "flex justify-end pt-2",

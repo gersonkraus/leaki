@@ -36,20 +36,26 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
   }, [l, f]);
 
   function y() {
-    let e = !o;
-    s(e);
-    if (e) {
+    let isFlipped = !o;
+    s(isFlipped);
+    if (isFlipped) {
       h.current.flipTime = Date.now();
       if (f && f.backAudio) {
         ec(f.backAudio, f.back);
+      } else if (f && f.back && e.audioHintEnabled) {
+        speakWordTTS(f.back);
       }
     }
   }
 
-  function handlePlayFrontAudio(e) {
-    e.stopPropagation();
+  function handlePlayFrontAudio(t) {
+    t.stopPropagation();
     h.current.audioPlaysCount += 1;
-    ec(f.frontAudio, f.front);
+    if (f.frontAudio) {
+      ec(f.frontAudio, f.front);
+    } else if (f.front && e.audioHintEnabled) {
+      speakWordTTS(f.front);
+    }
   }
 
   async function startVoiceRecognition() {

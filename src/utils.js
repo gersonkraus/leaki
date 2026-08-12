@@ -48,6 +48,39 @@ function calculateSpeechAccuracy(e, t) {
   return Math.max(0, Math.round((1 - i / o) * 100));
 }
 
+let _ttsVoiceName = "";
+
+function getBrazilianVoices() {
+  if (!("speechSynthesis" in window)) return [];
+  return window.speechSynthesis.getVoices().filter(v =>
+    v.lang === "pt-BR" || v.lang === "pt_BR" || v.lang === "pt"
+  );
+}
+
+function pickBestVoice() {
+  let voices = getBrazilianVoices();
+  if (!voices.length) return null;
+  if (_ttsVoiceName) {
+    let chosen = voices.find(v => v.name === _ttsVoiceName);
+    if (chosen) return chosen;
+  }
+  let natural = voices.find(v => /natural|neural|enhanced|premium/i.test(v.name));
+  if (natural) return natural;
+  let google = voices.find(v => /google/i.test(v.name));
+  if (google) return google;
+  let female = voices.find(v => /female|feminina|maria|ana|lucia|helena|lorena|julia/i.test(v.name));
+  if (female) return female;
+  return voices[0];
+}
+
+function setTTSVoice(name) {
+  _ttsVoiceName = name || "";
+}
+
+function getTTSVoiceName() {
+  return _ttsVoiceName;
+}
+
 function speakWordTTS(text) {
   if (!text || !("speechSynthesis" in window)) return;
   try {
@@ -55,6 +88,8 @@ function speakWordTTS(text) {
     let utter = new SpeechSynthesisUtterance(text);
     utter.lang = "pt-BR";
     utter.rate = 0.88;
+    let voice = pickBestVoice();
+    if (voice) utter.voice = voice;
     window.speechSynthesis.speak(utter);
   } catch (e) {}
 }

@@ -9,7 +9,7 @@ function em({ initial: e, onSave: t, onCancel: n }) {
     className: "space-y-4",
     onSubmit: e => {
       e.preventDefault();
-      r.trim() && l.trim() && t(r.trim(), l.trim(), o, d, Number(timeSec) || 7);
+      r.trim() && t(r.trim(), l.trim() || "", o, d, Number(timeSec) || 7);
     },
     children: [
       (0, u.jsxs)("div", {
