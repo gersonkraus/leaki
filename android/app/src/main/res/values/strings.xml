@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Leaki</string>
+    <string name="title_activity_main">Leaki</string>
+    <string name="package_name">app.leaki.srs</string>
+    <string name="custom_url_scheme">app.leaki.srs</string>
+</resources>

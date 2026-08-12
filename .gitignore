@@ -1,0 +1,29 @@
+node_modules/
+.venv/
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# Build artifacts (generated from src/)
+leaki.html
+www/index.html
+
+# Capacitor native build artifacts (keep android/ source, ignore local caches)
+android/.gradle/
+android/app/build/
+android/build/
+android/captures/
+android/local.properties
+android/*.iml
+android/.idea/
+
+dist/
+*.apk
+*.aab
+*.keystore
+
+# Local Android Studio installers (multi-GB)
+android-studio*.tar
+android-studio*.tar.gz
+*.Zone.Identifier
