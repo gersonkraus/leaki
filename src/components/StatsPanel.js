@@ -6,6 +6,7 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
     [savedMsg, setSavedMsg] = (0, c.useState)(null),
     [voices, setVoices] = (0, c.useState)([]),
     [selectedVoice, setSelectedVoice] = (0, c.useState)(""),
+    [ttsTestState, setTtsTestState] = (0, c.useState)(""),
     r = e.reduce((e, t) => e + (t.durationSeconds || 0), 0),
     a = e.reduce((e, t) => e + (t.totalReviews || 0), 0),
     l = e.reduce((e, t) => e + (t.correctCount || 0), 0),
@@ -15,17 +16,16 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
     function loadVoices() {
       let allVoices = window.speechSynthesis?.getVoices() || [];
       let ptVoices = allVoices.filter(v => v.lang === "pt-BR" || v.lang === "pt_BR" || v.lang === "pt");
-      let edgeVoices = [
-        { name: "edge:pt-BR-FranciscaNeural", localService: false, isEdge: true },
-        { name: "edge:pt-BR-AntonioNeural", localService: false, isEdge: true },
-        { name: "edge:pt-BR-ThalitaNeural", localService: false, isEdge: true },
-        { name: "edge:pt-BR-ValerioNeural", localService: false, isEdge: true },
-        { name: "edge:pt-BR-ManuelaNeural", localService: false, isEdge: true },
-        { name: "edge:pt-BR-NicolauNeural", localService: false, isEdge: true }
-      ];
+      let edgeVoices = getEdgeTTSVoices().map(v => ({
+        name: "edge:" + v.id,
+        localService: false,
+        isEdge: true,
+        label: v.label
+      }));
       setVoices([...edgeVoices, ...ptVoices]);
-      let current = getTTSVoiceName();
-      setSelectedVoice(current || "");
+      let current = getTTSVoiceName() || aiCfg?.ttsVoice || "";
+      setTTSVoice(current);
+      setSelectedVoice(getTTSVoiceName());
     }
     loadVoices();
     if (window.speechSynthesis) {
@@ -42,7 +42,7 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
 
   function handleSaveAIConfig(ev) {
     ev.preventDefault();
-    let newCfg = { provider, geminiKey: geminiKey.trim(), geminiModel: geminiModel.trim() || "gemini-2.0-flash" };
+    let newCfg = { provider, geminiKey: geminiKey.trim(), geminiModel: geminiModel.trim() || "gemini-2.0-flash", ttsVoice: selectedVoice };
     if (onSaveAI) onSaveAI(newCfg);
     setSavedMsg("Configurações salvas com sucesso!");
     setTimeout(() => setSavedMsg(null), 3000);
@@ -289,21 +289,24 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
               (0, u.jsxs)("div", {
                 children: [
                   (0, u.jsx)("label", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Voz do TTS (Português BR)" }),
-                  (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/70 mt-0.5", children: "Escolha a voz usada para ler palavras em voz alta quando não há áudio gravado." })
+                  (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/70 mt-0.5", children: "Vozes neurais funcionam no navegador e no APK. A primeira fala de cada palavra pede internet (~1s); as seguintes saem do cache." })
                 ]
               }),
               voices.length > 0 ? (0, u.jsxs)("select", {
                 value: selectedVoice,
                 onChange: e => {
-                  setSelectedVoice(e.target.value);
-                  setTTSVoice(e.target.value);
+                  let name = e.target.value;
+                  setSelectedVoice(name);
+                  setTTSVoice(name);
+                  setTtsTestState("");
+                  if (onSaveAI) onSaveAI({ provider, geminiKey: geminiKey.trim(), geminiModel: geminiModel.trim() || "gemini-2.0-flash", ttsVoice: name });
                 },
                 className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-violet transition-colors text-white",
                 children: [
-                  (0, u.jsx)("option", { value: "", children: "Automática (melhor disponível)" }),
+                  (0, u.jsx)("option", { value: "", children: "Automática (voz do aparelho)" }),
                   voices.map(v => {
                     let label = v.isEdge
-                      ? v.name.replace("edge:", "").replace("pt-BR-", "").replace("Neural", " (Neural)")
+                      ? (v.label || v.name.replace("edge:", "").replace("pt-BR-", "").replace("Neural", " (Neural)"))
                       : v.name + (v.localService ? " (local)" : " (navegador)");
                     return (0, u.jsx)("option", { value: v.name, children: label }, v.name);
                   })
@@ -311,10 +314,22 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
               }) : (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/60 font-mono", children: "Nenhuma voz em português encontrada no navegador." }),
               (0, u.jsx)("button", {
                 type: "button",
-                onClick: () => { speakWordTTS("Olá! Esta é uma demonstração da voz selecionada."); },
-                className: "font-mono text-[10px] px-3 py-1.5 rounded-lg border border-base-line text-ink-soft hover:text-violet-light hover:border-violet transition-colors",
-                children: "🔊 Testar voz"
-              })
+                disabled: ttsTestState === "loading",
+                onClick: async () => {
+                  setTtsTestState("loading");
+                  try {
+                    await speakWordTTS("Olá! Esta é uma demonstração da voz selecionada.");
+                    setTtsTestState("ok");
+                    setTimeout(() => setTtsTestState(s => s === "ok" ? "" : s), 2500);
+                  } catch (err) {
+                    setTtsTestState("error");
+                  }
+                },
+                className: "font-mono text-[10px] px-3 py-1.5 rounded-lg border border-base-line text-ink-soft hover:text-violet-light hover:border-violet transition-colors disabled:opacity-50",
+                children: ttsTestState === "loading" ? "⏳ Gerando voz neural…" : "🔊 Testar voz"
+              }),
+              ttsTestState === "ok" ? (0, u.jsx)("p", { className: "text-[10px] text-teal font-mono", children: "Voz pronta. Repetições desta frase saem do cache." }) : null,
+              ttsTestState === "error" ? (0, u.jsx)("p", { className: "text-[10px] text-coral font-mono", children: "Não foi possível gerar a voz neural. Verifique a internet ou use a voz automática." }) : null
             ]
           }),
           savedMsg ? (0, u.jsx)("div", { className: "p-2 rounded-lg bg-teal-dim text-teal font-mono text-xs", children: savedMsg }) : null,

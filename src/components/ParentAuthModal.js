@@ -1,4 +1,5 @@
 function ec(e, fallbackText) {
+  stopTTSPlayback();
   if (e) {
     new Audio(e).play().catch(() => {
       if (fallbackText) speakWordTTS(fallbackText);

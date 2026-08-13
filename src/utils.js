@@ -48,7 +48,53 @@ function calculateSpeechAccuracy(e, t) {
   return Math.max(0, Math.round((1 - i / o) * 100));
 }
 
+const EDGE_TTS_VOICES = [
+  { id: "pt-BR-FranciscaNeural", label: "Francisca (Neural)", gender: "feminina" },
+  { id: "pt-BR-AntonioNeural", label: "Antonio (Neural)", gender: "masculina" },
+  { id: "pt-BR-ThalitaMultilingualNeural", label: "Thalita (Neural multilíngue)", gender: "feminina" }
+];
+
+const EDGE_VOICE_ALIASES = {
+  "pt-BR-ThalitaNeural": "pt-BR-ThalitaMultilingualNeural",
+  "pt-BR-ValerioNeural": "pt-BR-AntonioNeural",
+  "pt-BR-ManuelaNeural": "pt-BR-FranciscaNeural",
+  "pt-BR-NicolauNeural": "pt-BR-AntonioNeural"
+};
+
+const TTS_CACHE_MAX = 80;
+const TTS_FETCH_TIMEOUT_MS = 10000;
+
 let _ttsVoiceName = "";
+let _ttsMemCache = new Map();
+let _ttsAudio = null;
+let _ttsObjectUrl = "";
+let _ttsSpeakGen = 0;
+
+function getEdgeTTSVoices() {
+  return EDGE_TTS_VOICES.slice();
+}
+
+function normalizeEdgeVoiceId(voice) {
+  let id = String(voice || "").replace(/^edge:/, "").trim();
+  if (!id) return "pt-BR-FranciscaNeural";
+  return EDGE_VOICE_ALIASES[id] || id;
+}
+
+function isEdgeTTSVoice(name) {
+  return String(name || "").startsWith("edge:");
+}
+
+function ttsCacheKey(voiceId, text) {
+  return voiceId + "\0" + String(text || "").trim().toLowerCase();
+}
+
+function isNativeApp() {
+  try {
+    return !!(window.Capacitor && (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+  } catch (e) {
+    return false;
+  }
+}
 
 function getBrazilianVoices() {
   if (!("speechSynthesis" in window)) return [];
@@ -60,7 +106,7 @@ function getBrazilianVoices() {
 function pickBestVoice() {
   let voices = getBrazilianVoices();
   if (!voices.length) return null;
-  if (_ttsVoiceName) {
+  if (_ttsVoiceName && !isEdgeTTSVoice(_ttsVoiceName)) {
     let chosen = voices.find(v => v.name === _ttsVoiceName);
     if (chosen) return chosen;
   }
@@ -74,39 +120,186 @@ function pickBestVoice() {
 }
 
 function setTTSVoice(name) {
-  _ttsVoiceName = name || "";
+  if (isEdgeTTSVoice(name)) {
+    _ttsVoiceName = "edge:" + normalizeEdgeVoiceId(name);
+  } else {
+    _ttsVoiceName = name || "";
+  }
 }
 
 function getTTSVoiceName() {
   return _ttsVoiceName;
 }
 
+function stopTTSPlayback() {
+  if (_ttsAudio) {
+    try {
+      _ttsAudio.pause();
+      _ttsAudio.removeAttribute("src");
+      _ttsAudio.load();
+    } catch (e) {}
+    _ttsAudio = null;
+  }
+  if (_ttsObjectUrl) {
+    try { URL.revokeObjectURL(_ttsObjectUrl); } catch (e) {}
+    _ttsObjectUrl = "";
+  }
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+
+function speakLocalTTS(text) {
+  if (!text || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  let utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "pt-BR";
+  utter.rate = 0.88;
+  let voice = pickBestVoice();
+  if (voice) utter.voice = voice;
+  window.speechSynthesis.speak(utter);
+}
+
+function rememberTtsBlob(key, blob) {
+  if (!blob || !blob.size) return;
+  if (_ttsMemCache.has(key)) _ttsMemCache.delete(key);
+  _ttsMemCache.set(key, blob);
+  while (_ttsMemCache.size > TTS_CACHE_MAX) {
+    _ttsMemCache.delete(_ttsMemCache.keys().next().value);
+  }
+  persistTtsBlob(key, blob).catch(() => {});
+}
+
+function openTtsCacheDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("no idb"));
+      return;
+    }
+    let req = window.indexedDB.open("leaki-tts-cache", 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains("audio")) req.result.createObjectStore("audio");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function persistTtsBlob(key, blob) {
+  let db = await openTtsCacheDb();
+  await new Promise((resolve, reject) => {
+    let tx = db.transaction("audio", "readwrite");
+    tx.objectStore("audio").put({ blob, at: Date.now() }, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function readPersistedTtsBlob(key) {
+  let db = await openTtsCacheDb();
+  return await new Promise((resolve, reject) => {
+    let req = db.transaction("audio", "readonly").objectStore("audio").get(key);
+    req.onsuccess = () => resolve(req.result && req.result.blob ? req.result.blob : null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function getCachedTtsBlob(key) {
+  if (_ttsMemCache.has(key)) return _ttsMemCache.get(key);
+  try {
+    let blob = await readPersistedTtsBlob(key);
+    if (blob) {
+      _ttsMemCache.set(key, blob);
+      return blob;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function blobFromBase64(b64, mime) {
+  let bin = atob(b64);
+  let bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime || "audio/mpeg" });
+}
+
+async function synthesizeViaNativePlugin(text, voiceId) {
+  let plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.EdgeTts;
+  if (!plugin || typeof plugin.speak !== "function") return null;
+  let res = await plugin.speak({ text, voice: voiceId });
+  if (!res || !res.audioBase64) return null;
+  return blobFromBase64(res.audioBase64, "audio/mpeg");
+}
+
+async function synthesizeViaLocalServer(text, voiceId) {
+  let ctrl = new AbortController();
+  let timer = setTimeout(() => ctrl.abort(), TTS_FETCH_TIMEOUT_MS);
+  try {
+    let resp = await fetch("/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: voiceId }),
+      signal: ctrl.signal
+    });
+    if (!resp.ok) throw new Error("TTS failed");
+    return await resp.blob();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function synthesizeEdgeAudio(text, voiceId) {
+  if (isNativeApp()) {
+    let nativeBlob = await synthesizeViaNativePlugin(text, voiceId);
+    if (nativeBlob && nativeBlob.size) return nativeBlob;
+    throw new Error("Edge TTS nativo indisponível");
+  }
+  return await synthesizeViaLocalServer(text, voiceId);
+}
+
+function releaseTtsUrl(url) {
+  if (_ttsObjectUrl !== url) return;
+  try { URL.revokeObjectURL(url); } catch (e) {}
+  _ttsObjectUrl = "";
+  if (_ttsAudio) _ttsAudio = null;
+}
+
+function playTtsBlob(blob) {
+  stopTTSPlayback();
+  let url = URL.createObjectURL(blob);
+  _ttsObjectUrl = url;
+  let audio = new Audio(url);
+  _ttsAudio = audio;
+  audio.onended = () => releaseTtsUrl(url);
+  audio.onerror = () => releaseTtsUrl(url);
+  return audio.play().catch(err => {
+    releaseTtsUrl(url);
+    throw err;
+  });
+}
+
 async function speakWordTTS(text) {
   if (!text) return;
+  let gen = ++_ttsSpeakGen;
+  stopTTSPlayback();
+  let wantsEdge = isEdgeTTSVoice(_ttsVoiceName);
+  if (!wantsEdge) {
+    speakLocalTTS(text);
+    return;
+  }
+  let voiceId = normalizeEdgeVoiceId(_ttsVoiceName);
+  let key = ttsCacheKey(voiceId, text);
   try {
-    if (_ttsVoiceName && _ttsVoiceName.startsWith("edge:")) {
-      let voiceId = _ttsVoiceName.replace("edge:", "");
-      let resp = await fetch("/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: voiceId })
-      });
-      if (!resp.ok) throw new Error("TTS failed");
-      let blob = await resp.blob();
-      let url = URL.createObjectURL(blob);
-      let audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
-      await audio.play();
-    } else {
-      window.speechSynthesis.cancel();
-      let utter = new SpeechSynthesisUtterance(text);
-      utter.lang = "pt-BR";
-      utter.rate = 0.88;
-      let voice = pickBestVoice();
-      if (voice) utter.voice = voice;
-      window.speechSynthesis.speak(utter);
+    let blob = await getCachedTtsBlob(key);
+    if (gen !== _ttsSpeakGen) return;
+    if (!blob) {
+      blob = await synthesizeEdgeAudio(text, voiceId);
+      if (gen !== _ttsSpeakGen) return;
+      rememberTtsBlob(key, blob);
     }
-  } catch (e) { console.error("TTS error:", e); }
+    await playTtsBlob(blob);
+  } catch (e) {
+    console.error("TTS error:", e);
+    if (gen === _ttsSpeakGen) speakLocalTTS(text);
+  }
 }
 
 async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, modelName) {

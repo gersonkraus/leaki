@@ -67,15 +67,17 @@ function es({ deck: e, cards: t, isParentMode: isParent, onBack: n, onStudy: r, 
                     children: [
                       (0, u.jsx)("span", { className: "font-medium text-white text-base", children: e.front }),
                       (0, u.jsx)("button", {
-                        onClick: () => e.frontAudio ? new Audio(e.frontAudio).play().catch(() => {}) : speakWordTTS(e.front),
-                        className: "shrink-0 text-ink-soft hover:text-violet-light transition-colors text-sm",
+                        type: "button",
+                        onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(e.frontAudio, e.front); },
+                        className: "shrink-0 min-w-8 min-h-8 px-1.5 text-ink-soft hover:text-violet-light transition-colors text-sm",
                         title: e.frontAudio ? "Ouvir gravação" : "Ouvir pronúncia automática (TTS)",
                         children: "🔊"
                       }),
                       (0, u.jsxs)("span", { className: "text-ink-soft text-sm", children: [" — ", e.back] }),
                       (0, u.jsx)("button", {
-                        onClick: () => e.backAudio ? new Audio(e.backAudio).play().catch(() => {}) : speakWordTTS(e.back),
-                        className: "shrink-0 text-ink-soft hover:text-violet-light transition-colors text-sm",
+                        type: "button",
+                        onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(e.backAudio, e.back); },
+                        className: "shrink-0 min-w-8 min-h-8 px-1.5 text-ink-soft hover:text-violet-light transition-colors text-sm",
                         title: e.backAudio ? "Ouvir gravação" : "Ouvir pronúncia automática (TTS)",
                         children: "🔊"
                       })

@@ -48,12 +48,13 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     }
   }
 
-  function handlePlayFrontAudio(t) {
-    t.stopPropagation();
+  function handlePlayFrontAudio(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
     h.current.audioPlaysCount += 1;
     if (f.frontAudio) {
       ec(f.frontAudio, f.front);
-    } else if (f.front && e.audioHintEnabled) {
+    } else if (f.front) {
       speakWordTTS(f.front);
     }
   }
@@ -458,7 +459,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
                       e.audioHintEnabled ? (0, u.jsxs)("button", {
                         type: "button",
                         onClick: handlePlayFrontAudio,
-                        className: "px-3 py-1 rounded-full bg-base-raised hover:bg-violet/20 text-xs text-ink-soft hover:text-violet-light border border-base-line transition-all flex items-center gap-1.5",
+                        className: "px-3 py-1.5 min-h-9 rounded-full bg-base-raised hover:bg-violet/20 text-xs text-ink-soft hover:text-violet-light border border-base-line transition-all flex items-center gap-1.5",
                         title: "Ouvir áudio da palavra (indica dúvida)",
                         children: [
                           (0, u.jsx)("span", { children: "🔊" }),
@@ -482,8 +483,9 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
                     children: [
                       (0, u.jsx)("span", { className: "font-mono text-[10px] uppercase tracking-wider text-violet-light font-semibold", children: "Significado / Resposta" }),
                       (0, u.jsx)("button", {
-                        onClick: e => { e.stopPropagation(); ec(f.backAudio, f.back); },
-                        className: "text-lg text-violet-light hover:scale-110 transition-transform",
+                        type: "button",
+                        onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(f.backAudio, f.back); },
+                        className: "min-w-10 min-h-10 text-lg text-violet-light hover:scale-110 transition-transform",
                         title: "Ouvir resposta",
                         children: "🔊"
                       })

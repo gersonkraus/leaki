@@ -19,13 +19,16 @@ document.head.appendChild(eg);
         [isParentMode, setIsParentMode] = (0, c.useState)(!1),
         [showParentAuth, setShowParentAuth] = (0, c.useState)(!1),
         [history, setHistory] = (0, c.useState)([]),
-        [aiSettings, setAISettings] = (0, c.useState)({ provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash" }),
+        [aiSettings, setAISettings] = (0, c.useState)({ provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" }),
         g = (0, c.useRef)([]);
 
       (0, c.useEffect)(() => {
         (async () => {
-          let [e, n, h, ai] = await Promise.all([ee(en, []), ee(er, []), ee(ehistory, []), ee(eaisettings, { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash" })]);
-          t(e), r(n), setHistory(h), setAISettings(ai || { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash" }), l(!0);
+          let defaults = { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" };
+          let [e, n, h, ai] = await Promise.all([ee(en, []), ee(er, []), ee(ehistory, []), ee(eaisettings, defaults)]);
+          let cfg = ai || defaults;
+          setTTSVoice(cfg.ttsVoice || "");
+          t(e), r(n), setHistory(h), setAISettings(cfg), l(!0);
         })();
       }, []);
 
@@ -55,6 +58,7 @@ document.head.appendChild(eg);
 
       function handleSaveAISettings(newCfg) {
         setAISettings(newCfg);
+        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "ttsVoice")) setTTSVoice(newCfg.ttsVoice || "");
       }
 
       function handleToggleParentMode() {
@@ -74,7 +78,10 @@ document.head.appendChild(eg);
           t(newDecks);
           r(newCards);
           setHistory(newHist);
-          if (newAI) setAISettings(newAI);
+          if (newAI) {
+            setAISettings(newAI);
+            if (newAI.ttsVoice != null) setTTSVoice(newAI.ttsVoice);
+          }
         } else {
           t(prevDecks => {
             let map = new Map();
@@ -93,7 +100,10 @@ document.head.appendChild(eg);
             let filtered = newHist.filter(h => !existingDates.has(h.date));
             return [...prevHist, ...filtered];
           });
-          if (newAI && newAI.geminiKey) setAISettings(newAI);
+          if (newAI && (newAI.geminiKey || newAI.ttsVoice || newAI.provider)) {
+            setAISettings(prev => ({ ...prev, ...newAI }));
+            if (newAI.ttsVoice != null) setTTSVoice(newAI.ttsVoice);
+          }
         }
       }
 

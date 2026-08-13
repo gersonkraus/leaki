@@ -12,6 +12,7 @@
     "sync": "npm run build && npm run prepare:web && npx cap sync android",
     "open:android": "npx cap open android",
     "android": "npm run sync && npx cap open android",
+    "test:tts": "node scripts/test-edge-tts.mjs",
     "build:apk": "npm run sync && cd android && ./gradlew assembleDebug",
     "build:release": "npm run sync && cd android && ./gradlew assembleRelease"
   },
