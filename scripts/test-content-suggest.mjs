@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync("src/utils.js", "utf8");
-const start = src.indexOf("function pickContentSuggestBackend");
+assert.ok(src.indexOf("function pickContentSuggestBackend") >= 0, "pickContentSuggestBackend missing");
 assert.ok(src.indexOf("function buildLearnerEvidence") >= 0, "buildLearnerEvidence missing");
 assert.ok(src.indexOf("function requestContentSuggestions") >= 0, "requestContentSuggestions missing");
 
@@ -72,6 +72,7 @@ assert.equal(parsed[0].kind, "word");
 assert.equal(parsed[0].front, "BOTA");
 assert.equal(parsed[1].kind, "phrase");
 assert.equal(parsed[2].kind, "word");
+assert.equal(parsed[2].front, "PTERODÁCTILO");
 assert.ok(!parsed.some((item) => item.front.toLowerCase() === "bola"));
 
 const prompt = buildContentSuggestPrompt(evidence);
@@ -83,7 +84,10 @@ assert.match(prompt, /frentesJaCadastradas/);
 
 assert.equal(pickContentSuggestBackend({ provider: "native" }), null);
 assert.equal(pickContentSuggestBackend({ provider: "native", geminiKey: "AIza" }), "gemini");
+assert.equal(pickContentSuggestBackend({ provider: "gemini", geminiKey: "AIza" }), "gemini");
+assert.equal(pickContentSuggestBackend({ provider: "native", openaiKey: "sk" }), "openai");
 assert.equal(pickContentSuggestBackend({ provider: "openai", openaiKey: "sk", geminiKey: "AIza" }), "openai");
+assert.equal(suggestionReadingTime("phrase"), 12);
 assert.equal(suggestionReadingTime("text"), 20);
 assert.equal(suggestionReadingTime("word"), 7);
 
@@ -99,7 +103,9 @@ const panel = readFileSync("src/components/ContentSuggestPanel.js", "utf8");
 assert.match(panel, /Liberar/);
 assert.match(panel, /Pedir sugestões à IA/);
 assert.doesNotMatch(panel, /onApproveCards\(\s*result/);
-assert.match(readFileSync("src/app.js", "utf8"), /handleApproveSuggestedCards/);
+assert.match(readFileSync("src/app.js", "utf8"), /buildNewCard/);
+assert.match(src, /x-goog-api-key/);
+assert.doesNotMatch(src, /generateContent\?key=/);
 assert.match(readFileSync("scripts/build.mjs", "utf8"), /ContentSuggestPanel/);
 
 console.log("content-suggest tests passed");

@@ -8,6 +8,8 @@
     "prepare:web": "node scripts/prepare-web.mjs",
     "web": "npm run build && npm run prepare:web && node scripts/serve.mjs",
     "dev": "npm run web",
+    "host": "npm run web",
+    "tunnel": "cloudflared tunnel --config cloudflared.yml run",
     "assets": "npx @capacitor/assets generate --android --iconBackgroundColor '#111114' --iconBackgroundColorDark '#111114' --splashBackgroundColor '#111114' --splashBackgroundColorDark '#111114'",
     "sync": "npm run build && npm run prepare:web && npx cap sync android",
     "open:android": "npx cap open android",
@@ -17,6 +19,7 @@
     "test:study": "node scripts/test-study-rate.mjs",
     "test:parent": "node scripts/test-parent-digest.mjs",
     "test:suggest": "node scripts/test-content-suggest.mjs",
+    "test:sync": "node scripts/test-sync.mjs",
     "build:apk": "npm run sync && cd android && ./gradlew assembleDebug",
     "build:release": "npm run sync && cd android && ./gradlew assembleRelease"
   },

@@ -26,15 +26,25 @@ document.head.appendChild(eg);
         [showParentAuth, setShowParentAuth] = (0, c.useState)(!1),
         [history, setHistory] = (0, c.useState)([]),
         [aiSettings, setAISettings] = (0, c.useState)({ provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" }),
+        [syncCfg, setSyncCfg] = (0, c.useState)(defaultSyncConfig),
+        [syncBusy, setSyncBusy] = (0, c.useState)(!1),
         g = (0, c.useRef)([]);
+      let syncCfgRef = (0, c.useRef)(syncCfg);
+      let dataRef = (0, c.useRef)({ decks: e, cards: n, history, aiSettings });
+      let syncingRef = (0, c.useRef)(!1);
+      let skipPushRef = (0, c.useRef)(!0);
+      syncCfgRef.current = syncCfg;
+      dataRef.current = { decks: e, cards: n, history, aiSettings };
 
       (0, c.useEffect)(() => {
         (async () => {
           let defaults = { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" };
-          let [e, n, h, ai] = await Promise.all([ee(en, []), ee(er, []), ee(ehistory, []), ee(eaisettings, defaults)]);
+          let [e, n, h, ai, syncSaved] = await Promise.all([ee(en, []), ee(er, []), ee(ehistory, []), ee(eaisettings, defaults), ee(esync, defaultSyncConfig())]);
           let cfg = ai || defaults;
           setTTSVoice(cfg.ttsVoice || "");
-          t(e), r(n), setHistory(h), setAISettings(cfg), l(!0);
+          t(e), r(n), setHistory(h), setAISettings(cfg);
+          if (syncSaved) setSyncCfg(Object.assign({}, defaultSyncConfig(), syncSaved));
+          l(!0);
         })();
       }, []);
 
@@ -54,6 +64,101 @@ document.head.appendChild(eg);
         a && et(eaisettings, persistableAISettings(aiSettings));
       }, [aiSettings, a]);
 
+      (0, c.useEffect)(() => {
+        a && et(esync, syncCfg);
+      }, [syncCfg, a]);
+
+      async function runSync(reason) {
+        let cfg = syncCfgRef.current;
+        if (!cfg.enabled || !isValidPairKey(cfg.pairKey) || !isOnline()) return;
+        if (syncingRef.current) return;
+        syncingRef.current = !0;
+        setSyncBusy(!0);
+        try {
+          let local = dataRef.current;
+          let remote = await pullSyncSnapshot(cfg.syncUrl, cfg.pairKey);
+          let merged = remote.snapshot
+            ? mergeSyncSnapshot({
+              decks: local.decks,
+              cards: local.cards,
+              history: local.history,
+              aiSettings: local.aiSettings
+            }, remote.snapshot)
+            : {
+              decks: local.decks,
+              cards: local.cards,
+              history: local.history,
+              aiSettings: local.aiSettings
+            };
+          if (!snapshotsLookSame(local, merged)) {
+            skipPushRef.current = !0;
+            t(merged.decks);
+            r(merged.cards);
+            setHistory(merged.history);
+            setAISettings(prev => mergeAiSettingsForSync(prev, merged.aiSettings));
+            if (merged.aiSettings && merged.aiSettings.ttsVoice != null) setTTSVoice(merged.aiSettings.ttsVoice || "");
+          }
+          let payload = snapshotForSync(merged.decks, merged.cards, merged.history, merged.aiSettings);
+          let saved;
+          try {
+            saved = await pushSyncSnapshot(cfg.syncUrl, cfg.pairKey, remote.rev, payload);
+          } catch (err) {
+            if (err && err.message === "sync-conflict" && err.remote) {
+              let again = mergeSyncSnapshot(merged, err.remote.snapshot);
+              skipPushRef.current = !0;
+              t(again.decks);
+              r(again.cards);
+              setHistory(again.history);
+              setAISettings(prev => mergeAiSettingsForSync(prev, again.aiSettings));
+              saved = await pushSyncSnapshot(cfg.syncUrl, cfg.pairKey, err.remote.rev, snapshotForSync(again.decks, again.cards, again.history, again.aiSettings));
+            } else {
+              throw err;
+            }
+          }
+          setSyncCfg(prev => Object.assign({}, prev, {
+            rev: saved.rev,
+            lastAt: saved.updatedAt || new Date().toISOString(),
+            lastError: "",
+            lastStatus: reason || "ok"
+          }));
+        } catch (err) {
+          setSyncCfg(prev => Object.assign({}, prev, {
+            lastError: err && err.message ? err.message : String(err),
+            lastStatus: "erro"
+          }));
+        } finally {
+          syncingRef.current = !1;
+          skipPushRef.current = !1;
+          setSyncBusy(!1);
+        }
+      }
+
+      (0, c.useEffect)(() => {
+        if (!a) return;
+        let boot = setTimeout(() => runSync("boot"), 500);
+        return () => clearTimeout(boot);
+      }, [a, syncCfg.enabled, syncCfg.pairKey]);
+
+      let aiSyncStamp = (aiSettings.learnerInterests || "") + "|" + (aiSettings.learnerDifficulties || "") + "|" + ((aiSettings.contentInbox || []).map(item => item.id + ":" + item.status).join(","));
+
+      (0, c.useEffect)(() => {
+        if (!a || skipPushRef.current || !syncCfg.enabled) return;
+        let tmr = setTimeout(() => runSync("local"), 1600);
+        return () => clearTimeout(tmr);
+      }, [e, n, history, aiSyncStamp, a, syncCfg.enabled]);
+
+      (0, c.useEffect)(() => {
+        if (!a || !syncCfg.enabled) return;
+        let id = setInterval(() => runSync("poll"), 20000);
+        return () => clearInterval(id);
+      }, [a, syncCfg.enabled, syncCfg.pairKey]);
+
+      (0, c.useEffect)(() => {
+        function onOnline() { runSync("online"); }
+        window.addEventListener("online", onOnline);
+        return () => window.removeEventListener("online", onOnline);
+      }, []);
+
       function handleSaveSessionStats(record) {
         setHistory(prev => [...prev, record]);
       }
@@ -68,27 +173,14 @@ document.head.appendChild(eg);
           let next = prev.slice();
           items.forEach(item => {
             if (!item || !item.deckId || !String(item.front || "").trim()) return;
-            let seed = I(new Date);
-            next.push({
-              id: ea(),
+            next.push(buildNewCard({
               deckId: item.deckId,
               front: String(item.front).trim(),
               back: String(item.back || "").trim(),
               frontAudio: item.frontAudio,
               backAudio: item.backAudio,
-              readingTime: item.readingTime || suggestionReadingTime(item.kind),
-              due: seed.due.toISOString(),
-              stability: seed.stability,
-              difficulty: seed.difficulty,
-              elapsed_days: seed.elapsed_days,
-              scheduled_days: seed.scheduled_days,
-              learning_steps: seed.learning_steps,
-              reps: seed.reps,
-              lapses: seed.lapses,
-              state: seed.state,
-              last_review: null,
-              createdAt: new Date().toISOString()
-            });
+              readingTime: item.readingTime || suggestionReadingTime(item.kind)
+            }));
           });
           return next;
         });
@@ -255,31 +347,15 @@ document.head.appendChild(eg);
               onSave: (frontText, backText, frontAud, backAud, readingTimeSec) => {
                 var l;
                 return "new" === h.mode ? function(frontText, backText, frontAud, backAud, readingTimeSec) {
-                  let l;
                   if (!s) return;
-                  let i = {
-                    id: ea(),
+                  r(e => [...e, buildNewCard({
                     deckId: s,
                     front: frontText,
                     back: backText,
                     frontAudio: frontAud,
                     backAudio: backAud,
-                    readingTime: readingTimeSec || 7,
-                    ...{
-                      due: (l = I(new Date)).due.toISOString(),
-                      stability: l.stability,
-                      difficulty: l.difficulty,
-                      elapsed_days: l.elapsed_days,
-                      scheduled_days: l.scheduled_days,
-                      learning_steps: l.learning_steps,
-                      reps: l.reps,
-                      lapses: l.lapses,
-                      state: l.state,
-                      last_review: null
-                    },
-                    createdAt: new Date().toISOString()
-                  };
-                  r(e => [...e, i]), m(null);
+                    readingTime: readingTimeSec || 7
+                  })]), m(null);
                 }(frontText, backText, frontAud, backAud, readingTimeSec) : (
                   l = h.card.id,
                   void(r(r => r.map(r => r.id === l ? {
@@ -317,7 +393,11 @@ document.head.appendChild(eg);
               onSaveAISettings: handleSaveAISettings,
               onApproveCards: handleApproveSuggestedCards,
               onClearHistory: handleClearHistory,
-              onClose: () => setKStats(!1)
+              onClose: () => setKStats(!1),
+              syncCfg: syncCfg,
+              onSaveSync: next => setSyncCfg(prev => Object.assign({}, prev, next)),
+              onSyncNow: () => runSync("manual"),
+              syncBusy: syncBusy
             })
           })
         ]

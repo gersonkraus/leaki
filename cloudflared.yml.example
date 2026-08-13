@@ -1,0 +1,15 @@
+# Copie para cloudflared.yml e preencha o túnel da sua conta:
+#   cp cloudflared.yml.example cloudflared.yml
+#   cloudflared tunnel create leaki
+#   cloudflared tunnel route dns leaki leaki.gerson.com
+#
+# O domínio leaki.gerson.com precisa estar na Cloudflare.
+# Suba o app com `npm run web` e depois `npm run tunnel`.
+
+tunnel: SUBSTITUA_PELO_UUID_DO_TUNEL
+credentials-file: /home/SUBSTITUA/.cloudflared/SUBSTITUA_PELO_UUID_DO_TUNEL.json
+
+ingress:
+  - hostname: leaki.gerson.com
+    service: http://127.0.0.1:3030
+  - service: http_status:404

@@ -1,4 +1,4 @@
-function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n }) {
+function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n, syncCfg, onSaveSync, onSyncNow, syncBusy }) {
   let [activeTab, setActiveTab] = (0, c.useState)("stats"),
     [geminiKey, setGeminiKey] = (0, c.useState)(aiCfg?.geminiKey || ""),
     [geminiModel, setGeminiModel] = (0, c.useState)(aiCfg?.geminiModel || "gemini-2.0-flash"),
@@ -88,6 +88,15 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
           }),
           (0, u.jsxs)("button", {
             type: "button",
+            onClick: () => setActiveTab("sync"),
+            className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("sync" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
+            children: [
+              (0, u.jsx)("span", { children: "🔗" }),
+              " Sync"
+            ]
+          }),
+          (0, u.jsxs)("button", {
+            type: "button",
             onClick: () => setActiveTab("ai"),
             className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("ai" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
             children: [
@@ -97,7 +106,8 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
           })
         ]
       }),
-      "stats" === activeTab ? (0, u.jsxs)("div", {
+      (function renderActiveTab() {
+        if ("stats" === activeTab) return (0, u.jsxs)("div", {
         className: "space-y-4",
         children: [
           (0, u.jsxs)("div", {
@@ -237,14 +247,22 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
             ]
           })
         ]
-      }) : "suggest" === activeTab ? (0, u.jsx)(eContentSuggest, {
+      });
+        if ("sync" === activeTab) return (0, u.jsx)(eSyncPanel, {
+        syncCfg: syncCfg,
+        onSaveSync: onSaveSync,
+        onSyncNow: onSyncNow,
+        busy: syncBusy
+      });
+        if ("suggest" === activeTab) return (0, u.jsx)(eContentSuggest, {
         history: e,
         cards: cardsList,
         decks: decksList || [],
         aiCfg: aiCfg,
         onSaveAI: onSaveAI,
         onApproveCards: onApproveCards
-      }) : (0, u.jsxs)("form", {
+      });
+        return (0, u.jsxs)("form", {
         onSubmit: handleSaveAIConfig,
         className: "p-4 rounded-xl bg-base-surface border border-base-line space-y-3.5",
         children: [
@@ -500,7 +518,8 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
             })
           })
         ]
-      }),
+      });
+      })(),
       (0, u.jsx)("div", {
         className: "flex justify-end pt-1",
         children: (0, u.jsx)("button", {

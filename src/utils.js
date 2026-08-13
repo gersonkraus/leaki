@@ -810,9 +810,9 @@ async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, m
   let evalRules = normalizeEvalRules(rules);
   let prompt = buildGeminiEvalPrompt(expectedText, evalRules);
   
-  let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
+  let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       contents: [{
         parts: [
@@ -824,8 +824,8 @@ async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, m
   });
   
   if (!response.ok) {
-    let errText = await response.text().catch(() => "");
-    throw new Error("Erro na API Gemini (" + response.status + "): " + errText);
+    await response.text().catch(() => "");
+    throw new Error("Erro na API Gemini (" + response.status + ")");
   }
   
   let data = await response.json();
@@ -863,8 +863,8 @@ async function transcribeWithOpenAI(audioBlob, apiKey, modelName) {
     body: form
   });
   if (!response.ok) {
-    let errText = await response.text().catch(() => "");
-    throw new Error("Erro na API OpenAI (" + response.status + "): " + errText);
+    await response.text().catch(() => "");
+    throw new Error("Erro na API OpenAI (" + response.status + ")");
   }
   let data = await response.json();
   return String(data.text || "").trim();
@@ -1030,9 +1030,9 @@ const CONTENT_SUGGEST_SCHEMA = {
 
 async function suggestContentWithGemini(prompt, apiKey, modelName) {
   let model = (modelName || "gemini-2.0-flash").trim();
-  let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
+  let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -1043,8 +1043,8 @@ async function suggestContentWithGemini(prompt, apiKey, modelName) {
     })
   });
   if (!response.ok) {
-    let errText = await response.text().catch(() => "");
-    throw new Error("Erro na API Gemini (" + response.status + "): " + errText);
+    await response.text().catch(() => "");
+    throw new Error("Erro na API Gemini (" + response.status + ")");
   }
   let data = await response.json();
   let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
@@ -1069,8 +1069,8 @@ async function suggestContentWithOpenAI(prompt, apiKey) {
     })
   });
   if (!response.ok) {
-    let errText = await response.text().catch(() => "");
-    throw new Error("Erro na API OpenAI (" + response.status + "): " + errText);
+    await response.text().catch(() => "");
+    throw new Error("Erro na API OpenAI (" + response.status + ")");
   }
   let data = await response.json();
   return parseJsonLoose(data.choices?.[0]?.message?.content || "{}");
@@ -1101,10 +1101,196 @@ function suggestionReadingTime(kind) {
   return 7;
 }
 
+function buildNewCard({ deckId, front, back, frontAudio, backAudio, readingTime }) {
+  let seed = I(new Date);
+  return {
+    id: ea(),
+    deckId,
+    front,
+    back: back || "",
+    frontAudio,
+    backAudio,
+    readingTime: readingTime || 7,
+    due: seed.due.toISOString(),
+    stability: seed.stability,
+    difficulty: seed.difficulty,
+    elapsed_days: seed.elapsed_days,
+    scheduled_days: seed.scheduled_days,
+    learning_steps: seed.learning_steps,
+    reps: seed.reps,
+    lapses: seed.lapses,
+    state: seed.state,
+    last_review: null,
+    createdAt: new Date().toISOString()
+  };
+}
+
 function pruneContentInbox(list) {
   let items = Array.isArray(list) ? list.slice() : [];
   let pending = items.filter(item => item && item.status === "pending");
   let done = items.filter(item => item && item.status !== "pending").slice(-20);
   return pending.concat(done).slice(0, 40);
+}
+
+const DEFAULT_SYNC_HOST = "https://leaki.gerson.com";
+const esync = "anki-crud:sync";
+const PAIR_KEY_RE = /^leaki_[a-f0-9]{32}$/;
+
+function generatePairKey() {
+  let bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  let hex = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  return "leaki_" + hex;
+}
+
+function normalizePairKey(raw) {
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function isValidPairKey(raw) {
+  return PAIR_KEY_RE.test(normalizePairKey(raw));
+}
+
+function resolveSyncBase(url) {
+  let raw = String(url || "").trim().replace(/\/+$/, "");
+  if (!raw) {
+    try {
+      if (typeof location !== "undefined" && /leaki\.gerson\.com$/i.test(location.hostname)) return location.origin;
+    } catch (e) {}
+    return DEFAULT_SYNC_HOST;
+  }
+  return raw;
+}
+
+function defaultSyncConfig() {
+  return {
+    enabled: !1,
+    pairKey: "",
+    syncUrl: DEFAULT_SYNC_HOST,
+    rev: 0,
+    lastAt: "",
+    lastError: "",
+    lastStatus: ""
+  };
+}
+
+function stripCardMedia(card) {
+  if (!card) return card;
+  let copy = Object.assign({}, card);
+  if (copy.frontAudio && String(copy.frontAudio).startsWith("data:")) delete copy.frontAudio;
+  if (copy.backAudio && String(copy.backAudio).startsWith("data:")) delete copy.backAudio;
+  return copy;
+}
+
+function snapshotForSync(decks, cards, history, aiSettings) {
+  return {
+    version: 2,
+    appName: "Leaki",
+    exportedAt: new Date().toISOString(),
+    decks: decks || [],
+    cards: (cards || []).map(stripCardMedia),
+    history: history || [],
+    aiSettings: persistableAISettings(aiSettings || {})
+  };
+}
+
+function mergeById(local, remote) {
+  let map = new Map();
+  (local || []).forEach(item => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  (remote || []).forEach(item => {
+    if (!item || !item.id) return;
+    let prev = map.get(item.id);
+    if (!prev) {
+      map.set(item.id, item);
+      return;
+    }
+    let next = Object.assign({}, prev, item);
+    if (!next.frontAudio && prev.frontAudio) next.frontAudio = prev.frontAudio;
+    if (!next.backAudio && prev.backAudio) next.backAudio = prev.backAudio;
+    map.set(item.id, next);
+  });
+  return Array.from(map.values());
+}
+
+function mergeHistory(local, remote) {
+  let map = new Map();
+  (local || []).concat(remote || []).forEach(row => {
+    if (!row) return;
+    let key = row.date || JSON.stringify(row);
+    if (!map.has(key)) map.set(key, row);
+  });
+  return Array.from(map.values()).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
+function mergeAiSettingsForSync(local, remote) {
+  let next = Object.assign({}, local || {}, remote || {});
+  if (local && local.geminiKey) next.geminiKey = local.geminiKey;
+  if (local && local.openaiKey) next.openaiKey = local.openaiKey;
+  if (local && local.geminiKeyEnc && !next.geminiKeyEnc) {
+    next.geminiKeyEnc = local.geminiKeyEnc;
+    next.geminiKeyIv = local.geminiKeyIv;
+  }
+  if (local && local.openaiKeyEnc && !next.openaiKeyEnc) {
+    next.openaiKeyEnc = local.openaiKeyEnc;
+    next.openaiKeyIv = local.openaiKeyIv;
+  }
+  next.contentInbox = pruneContentInbox([].concat((local && local.contentInbox) || [], (remote && remote.contentInbox) || []));
+  return next;
+}
+
+function mergeSyncSnapshot(local, remote) {
+  let left = local || {};
+  let right = remote || {};
+  return {
+    decks: mergeById(left.decks, right.decks),
+    cards: mergeById(left.cards, right.cards),
+    history: mergeHistory(left.history, right.history),
+    aiSettings: mergeAiSettingsForSync(left.aiSettings, right.aiSettings)
+  };
+}
+
+function snapshotsLookSame(a, b) {
+  function print(s) {
+    return JSON.stringify({
+      decks: (s.decks || []).map(d => [d.id, d.name]),
+      cards: (s.cards || []).map(c => [c.id, c.front, c.due, c.reps]),
+      history: (s.history || []).map(h => h.date),
+      inbox: ((s.aiSettings && s.aiSettings.contentInbox) || []).map(i => i.id + ":" + i.status)
+    });
+  }
+  return print(a || {}) === print(b || {});
+}
+
+async function pullSyncSnapshot(base, key) {
+  let res = await fetch(resolveSyncBase(base) + "/sync/" + encodeURIComponent(normalizePairKey(key)), {
+    method: "GET",
+    headers: { Accept: "application/json" }
+  });
+  if (res.status === 404) return { rev: 0, snapshot: null };
+  if (!res.ok) throw new Error("Não foi possível ler o sync (" + res.status + ")");
+  return await res.json();
+}
+
+async function pushSyncSnapshot(base, key, rev, snapshot) {
+  let res = await fetch(resolveSyncBase(base) + "/sync/" + encodeURIComponent(normalizePairKey(key)), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "If-Match": String(rev || 0)
+    },
+    body: JSON.stringify({ rev: rev || 0, snapshot })
+  });
+  if (res.status === 409) {
+    let remote = await res.json();
+    let err = new Error("sync-conflict");
+    err.remote = remote;
+    throw err;
+  }
+  if (!res.ok) throw new Error("Não foi possível gravar o sync (" + res.status + ")");
+  return await res.json();
 }
 

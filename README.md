@@ -26,9 +26,13 @@ Em terminal novo: `source ~/.bashrc` (ou abra outro terminal).
 ```bash
 npm install
 
-# Abrir no navegador do computador (criar baralhos/áudios no PC)
+# Abrir no computador (e API de sync em /sync/:chave)
 npm run web
-# → http://localhost:3000
+# → http://127.0.0.1:3030
+
+# Túnel Cloudflare (URL fixa https://leaki.gerson.com)
+# cp cloudflared.yml.example cloudflared.yml  → preencha o UUID
+npm run tunnel
 
 # Prepara HTML + fontes locais e sincroniza no Android
 npm run sync

@@ -18,6 +18,12 @@ android/local.properties
 android/*.iml
 android/.idea/
 
+# Local sync snapshots (pairing keys hashed)
+data/
+
+# Cloudflare named tunnel (contains tunnel UUID / path to credentials)
+cloudflared.yml
+
 dist/
 *.apk
 *.aab

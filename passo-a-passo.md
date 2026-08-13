@@ -8,10 +8,10 @@ Este guia ensina como usar o **Leaki** no computador e no celular Android, inclu
 
 ```mermaid
 graph LR
-    A[1. PC: npm run web] -->|Cria baralhos, áudios e tempos| B[2. Exportar Backup .json]
-    B -->|Enviar por WhatsApp / Drive / Cabo| C[3. Celular: App Leaki]
-    C -->|Importar Backup| D[4. Estudar com Voz & IA]
-    D -->|Acompanhar Desempenho| E[5. Relatório dos Pais]
+    A[1. Celular APK] -->|estuda offline| B[Dados no aparelho]
+    C[PC: npm run web + túnel] -->|leaki.gerson.com| D[Painel dos pais]
+    B -->|chave de pareamento| E[Sync]
+    D -->|chave de pareamento| E
 ```
 
 ---
@@ -78,3 +78,23 @@ Durante o estudo:
   * **Tempo Total de Estudo** e **Taxa de Leitura Autônoma (%)**.
   * **Diagnóstico de Voz**: Lista exata de palavras que a criança falou vs o esperado com porcentagem de acerto.
   * **Hesitações e Dúvidas**: Palavras em que ela precisou de áudio de ajuda ou demorou além do tempo limite.
+
+---
+
+## 6️⃣ Site em leaki.gerson.com (túnel + chave)
+
+A criança **sempre estuda no APK**. O computador desligado não interrompe o estudo.
+
+1. No PC, com o domínio `gerson.com` na Cloudflare:
+   ```bash
+   cp cloudflared.yml.example cloudflared.yml
+   cloudflared tunnel create leaki
+   cloudflared tunnel route dns leaki leaki.gerson.com
+   ```
+   Preencha o UUID e o `credentials-file` no `cloudflared.yml`.
+2. Em um terminal: `npm run web`
+3. Em outro: `npm run tunnel`
+4. No celular (área dos pais → aba **Sync**): **Gerar chave** e **Ligar sync**. Copie a chave.
+5. No navegador abra `https://leaki.gerson.com`, entre na área dos pais, aba **Sync**, cole a mesma chave e ligue o sync.
+
+Baralhos, fichas e histórico passam a ir e voltar quando houver rede. Áudio gravado em `data:` fica no aparelho (o texto da ficha sincroniza). Chaves Gemini/OpenAI não sobem.
