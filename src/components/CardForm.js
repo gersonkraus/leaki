@@ -3,13 +3,21 @@ function em({ initial: e, onSave: t, onCancel: n }) {
     [l, i] = (0, c.useState)(e?.back ?? ""),
     [o, s] = (0, c.useState)(e?.frontAudio),
     [d, f] = (0, c.useState)(e?.backAudio),
-    [timeSec, setTimeSec] = (0, c.useState)(e?.readingTime ? Number(e.readingTime) : 7);
+    [timeSec, setTimeSec] = (0, c.useState)(e?.readingTime ? Number(e.readingTime) : 7),
+    [saving, setSaving] = (0, c.useState)(!1);
 
   return (0, u.jsxs)("form", {
     className: "space-y-4",
-    onSubmit: e => {
-      e.preventDefault();
-      r.trim() && t(r.trim(), l.trim() || "", o, d, Number(timeSec) || 7);
+    onSubmit: async ev => {
+      ev.preventDefault();
+      if (!r.trim() || saving) return;
+      let frontAud = o;
+      if (!frontAud && isEdgeTTSVoice(getTTSVoiceName()) && isOnline()) {
+        setSaving(!0);
+        try { frontAud = await synthesizeToDataUrl(r.trim()) || o; } catch (err) { frontAud = o; }
+        setSaving(!1);
+      }
+      t(r.trim(), l.trim() || "", frontAud, d, Number(timeSec) || 7);
     },
     children: [
       (0, u.jsxs)("div", {
@@ -98,7 +106,8 @@ function em({ initial: e, onSave: t, onCancel: n }) {
           (0, u.jsx)("button", {
             type: "submit",
             className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-violet text-white hover:bg-violet-light transition-colors",
-            children: "salvar"
+            disabled: saving,
+            children: saving ? "gerando áudio…" : "salvar"
           })
         ]
       })

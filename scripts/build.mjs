@@ -47,7 +47,7 @@ const cardForm = readComponent('CardForm.js');
 const app = read('app.js');
 
 // --- Assemble ---
-const html = `<!DOCTYPE html><html lang=en><style>${css}</style>
+const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#111114"><meta name="mobile-web-app-capable" content="yes"><title>Leaki</title><style>${css}</style></head><body>
     <div id=root></div>
     <script type="module">${vendor}
 ${utils}
@@ -63,7 +63,7 @@ ${audioRecorder}
 ${cardForm}
 ${app}
 </script>
-</html>`;
+</body></html>`;
 
 const dest = join(root, 'leaki.html');
 writeFileSync(dest, html);

@@ -1,4 +1,10 @@
 
+if (!document.querySelector('meta[name="viewport"]')) {
+  let vp = document.createElement("meta");
+  vp.name = "viewport";
+  vp.content = "width=device-width, initial-scale=1, viewport-fit=cover";
+  document.head.appendChild(vp);
+}
 let eg = document.createElement("link");
 eg.rel = "stylesheet";
 eg.href = "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
@@ -45,7 +51,7 @@ document.head.appendChild(eg);
       }, [history, a]);
 
       (0, c.useEffect)(() => {
-        a && et(eaisettings, aiSettings);
+        a && et(eaisettings, persistableAISettings(aiSettings));
       }, [aiSettings, a]);
 
       function handleSaveSessionStats(record) {
@@ -56,8 +62,12 @@ document.head.appendChild(eg);
         setHistory([]);
       }
 
-      function handleSaveAISettings(newCfg) {
-        setAISettings(newCfg);
+      async function handleSaveAISettings(newCfg) {
+        let merged = Object.assign({}, aiSettings, newCfg);
+        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "geminiKey")) {
+          merged = await sealGeminiKey(merged, newCfg.geminiKey);
+        }
+        setAISettings(merged);
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "ttsVoice")) setTTSVoice(newCfg.ttsVoice || "");
       }
 
@@ -111,7 +121,7 @@ document.head.appendChild(eg);
         v = n.filter(e => e.deckId === s).sort((e, t) => e.front.localeCompare(t.front));
 
       return a ? (0, u.jsxs)("div", {
-        className: "min-h-screen catalog-scrollbar",
+        className: "min-h-screen catalog-scrollbar kid-app",
         children: [
           "list" === i && (0, u.jsx)(el, {
             decks: e,
@@ -173,7 +183,13 @@ document.head.appendChild(eg);
             onExit: () => o("deck")
           }),
           showParentAuth && (0, u.jsx)(ParentAuthModal, {
-            onSuccess: () => { setShowParentAuth(!1); setIsParentMode(!0); },
+            lock: aiSettings,
+            onSaveLock: handleSaveAISettings,
+            onSuccess: unlocked => {
+              setShowParentAuth(!1);
+              setIsParentMode(!0);
+              if (unlocked) setAISettings(unlocked);
+            },
             onClose: () => setShowParentAuth(!1)
           }),
           f && (0, u.jsx)(ef, {
@@ -182,15 +198,15 @@ document.head.appendChild(eg);
             children: (0, u.jsx)(ep, {
               initial: "edit" === f.mode ? f.deck : void 0,
               onCancel: () => p(null),
-              onSave: (e, n, audioHint, skipRec) => {
+              onSave: (e, n, audioHint, skipRec, requireSpeech) => {
                 var r;
                 let a;
                 return "new" === f.mode ? (
-                  a = { id: ea(), name: e, description: n, audioHintEnabled: !!audioHint, skipRecordingEnabled: !!skipRec, createdAt: new Date().toISOString() },
+                  a = { id: ea(), name: e, description: n, audioHintEnabled: !!audioHint, skipRecordingEnabled: !!skipRec, requireSpeechToFlip: !!requireSpeech, createdAt: new Date().toISOString() },
                   void(t(e => [...e, a]), p(null))
                 ) : (
                   r = f.deck.id,
-                  void(t(t => t.map(t => t.id === r ? { ...t, name: e, description: n, audioHintEnabled: !!audioHint, skipRecordingEnabled: !!skipRec } : t)), p(null))
+                  void(t(t => t.map(t => t.id === r ? { ...t, name: e, description: n, audioHintEnabled: !!audioHint, skipRecordingEnabled: !!skipRec, requireSpeechToFlip: !!requireSpeech } : t)), p(null))
                 );
               }
             })
@@ -260,6 +276,7 @@ document.head.appendChild(eg);
             onClose: () => setKStats(!1),
             children: (0, u.jsx)(eParentStats, {
               history: history,
+              cards: n,
               aiSettings: aiSettings,
               onSaveAISettings: handleSaveAISettings,
               onClearHistory: handleClearHistory,

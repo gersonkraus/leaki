@@ -20,6 +20,8 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     [isListening, setIsListening] = (0, c.useState)(!1),
     [isAnalyzingAI, setIsAnalyzingAI] = (0, c.useState)(!1),
     [voiceFeedback, setVoiceFeedback] = (0, c.useState)(null),
+    [flipHint, setFlipHint] = (0, c.useState)(""),
+    [needMicInfo, setNeedMicInfo] = (0, c.useState)(!wasMicExplained()),
     recRef = (0, c.useRef)(null),
     mediaStreamRef = (0, c.useRef)(null),
     recordedAudioChunks = (0, c.useRef)([]);
@@ -32,19 +34,44 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
       setVoiceFeedback(null);
       setIsListening(!1);
       setIsAnalyzingAI(!1);
+      setFlipHint("");
     }
   }, [l, f]);
 
+  let mustSpeak = !!e.requireSpeechToFlip;
+
+  function playBackSide() {
+    if (f && f.backAudio) {
+      ec(f.backAudio, f.back);
+    } else if (f && f.back && e.audioHintEnabled) {
+      speakWordTTS(f.back);
+    }
+  }
+
+  function revealAfterSpeech() {
+    h.current.flipTime = Date.now();
+    setFlipHint("");
+    s(!0);
+    playBackSide();
+  }
+
   function y() {
+    if (mustSpeak) {
+      if (o) return;
+      if (!isValidSpeechResult(voiceFeedback)) {
+        setFlipHint("Fale a palavra primeiro");
+        return;
+      }
+      h.current.flipTime = Date.now();
+      s(!0);
+      playBackSide();
+      return;
+    }
     let isFlipped = !o;
     s(isFlipped);
     if (isFlipped) {
-      h.current.flipTime = Date.now();
-      if (f && f.backAudio) {
-        ec(f.backAudio, f.back);
-      } else if (f && f.back && e.audioHintEnabled) {
-        speakWordTTS(f.back);
-      }
+      if (!h.current.flipTime) h.current.flipTime = Date.now();
+      playBackSide();
     }
   }
 
@@ -59,20 +86,39 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     }
   }
 
+  function applySpeechResult(transcript) {
+    let acc = calculateSpeechAccuracy(transcript, f.front);
+    let fb = {
+      spokenText: transcript,
+      accuracy: acc,
+      feedback: feedbackFromAccuracy(acc),
+      quality: speechQuality(acc),
+      isAI: !1
+    };
+    setVoiceFeedback(fb);
+    h.current.voiceAttempts.push({ word: f.front, spoken: transcript, accuracy: acc, feedback: fb.feedback });
+    if (!o) revealAfterSpeech();
+  }
+
   async function startVoiceRecognition() {
     if (isListening || !f) return;
+    if (needMicInfo || !wasMicExplained()) {
+      setNeedMicInfo(!0);
+      return;
+    }
     setVoiceFeedback(null);
+    setIsListening(!0);
+    setIsAnalyzingAI(!1);
 
     let useGemini = aiCfg?.provider === "gemini" && !!aiCfg?.geminiKey;
-
     if (useGemini) {
       try {
         let stream = await navigator.mediaDevices.getUserMedia({ audio: !0 });
         mediaStreamRef.current = stream;
         let recorder = new MediaRecorder(stream);
         recordedAudioChunks.current = [];
-        recorder.ondataavailable = e => {
-          if (e.data.size > 0) recordedAudioChunks.current.push(e.data);
+        recorder.ondataavailable = ev => {
+          if (ev.data.size > 0) recordedAudioChunks.current.push(ev.data);
         };
         recorder.onstop = async () => {
           stream.getTracks().forEach(t => t.stop());
@@ -83,15 +129,15 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
             let reader = new FileReader();
             reader.onloadend = async () => {
               try {
-                let base64 = reader.result;
-                let res = await analyzeWithGemini(base64, recorder.mimeType, f.front, aiCfg.geminiKey, aiCfg.geminiModel);
+                let res = await analyzeWithGemini(reader.result, recorder.mimeType, f.front, aiCfg.geminiKey, aiCfg.geminiModel);
                 setVoiceFeedback(res);
                 h.current.voiceAttempts.push({ word: f.front, spoken: res.spokenText, accuracy: res.accuracy, feedback: res.feedback });
                 setIsAnalyzingAI(!1);
-                if (!o) s(!0);
+                if (isValidSpeechResult(res) && !o) revealAfterSpeech();
               } catch (err) {
-                console.warn("Fallback to native recognition:", err);
-                fallbackNativeRecognition();
+                console.warn("Fallback to device recognition:", err);
+                setIsAnalyzingAI(!1);
+                runDeviceRecognition();
               }
             };
             reader.readAsDataURL(blob);
@@ -101,97 +147,41 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
         };
         recorder.start();
         recRef.current = recorder;
-        setIsListening(!0);
+        return;
       } catch (err) {
-        fallbackNativeRecognition();
+        /* fall through */
       }
-    } else {
-      fallbackNativeRecognition();
     }
+    await runDeviceRecognition();
   }
 
-  function fallbackNativeRecognition() {
-    let SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRec) {
-      alert("Reconhecimento de voz não suportado neste navegador. Use Google Chrome ou Edge.");
-      return;
-    }
+  async function runDeviceRecognition() {
+    setIsListening(!0);
     try {
-      let recognition = new SpeechRec();
-      recognition.lang = "pt-BR";
-      recognition.interimResults = !1;
-      recognition.maxAlternatives = 1;
-      let gotResult = !1;
-      let timeoutId = null;
-
-      recognition.onstart = () => {
-        setIsListening(!0);
-        setIsAnalyzingAI(!1);
-        timeoutId = setTimeout(() => {
-          if (!gotResult) {
-            try { recognition.stop(); } catch (e) {}
-          }
-        }, 8000);
-      };
-
-      recognition.onresult = event => {
-        gotResult = !0;
-        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-        let transcript = event.results?.[0]?.[0]?.transcript || "";
-        if (!transcript.trim()) {
-          setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: "Não consegui ouvir. Tente falar mais perto do microfone.", quality: "precisa_praticar", isAI: !1 });
-          setIsListening(!1);
-          return;
-        }
-        let acc = calculateSpeechAccuracy(transcript, f.front);
-        let fb = {
-          spokenText: transcript,
-          accuracy: acc,
-          feedback: acc >= 80 ? "🌟 Excelente leitura!" : acc >= 50 ? "🟨 Quase lá! Pratique o som." : "❌ Pratique mais uma vez.",
-          quality: acc >= 80 ? "excelente" : acc >= 50 ? "quase_la" : "precisa_praticar",
-          isAI: !1
-        };
-        setVoiceFeedback(fb);
-        h.current.voiceAttempts.push({ word: f.front, spoken: transcript, accuracy: acc, feedback: fb.feedback });
-        setIsListening(!1);
-        if (!o) s(!0);
-      };
-
-      recognition.onerror = event => {
-        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-        console.warn("SpeechRecognition error:", event.error);
-        setIsListening(!1);
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-          setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: "Permissão do microfone negada. Permita o acesso ao microfone nas configurações do navegador.", quality: "precisa_praticar", isAI: !1 });
-        } else if (event.error === "no-speech") {
-          setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: "Nenhuma fala detectada. Tente falar mais alto e perto do microfone.", quality: "precisa_praticar", isAI: !1 });
-        } else {
-          setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: "Erro no reconhecimento de voz. Tente novamente.", quality: "precisa_praticar", isAI: !1 });
-        }
-      };
-
-      recognition.onend = () => {
-        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-        if (!gotResult && isListening) {
-          setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: "Não consegui ouvir. Tente falar mais perto do microfone.", quality: "precisa_praticar", isAI: !1 });
-        }
-        setIsListening(!1);
-      };
-
-      recRef.current = recognition;
-      recognition.start();
-    } catch (e) {
-      console.warn("SpeechRecognition init error:", e);
+      let res = await recognizeSpeechPt();
       setIsListening(!1);
-      setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: "Não foi possível iniciar o reconhecimento de voz. Use Chrome ou Edge.", quality: "precisa_praticar", isAI: !1 });
+      if (res.error && !res.transcript) {
+        setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: speechErrorFeedback(res.error), quality: "precisa_praticar", isAI: !1 });
+        return;
+      }
+      if (!String(res.transcript || "").trim()) {
+        setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: speechErrorFeedback("no-speech"), quality: "precisa_praticar", isAI: !1 });
+        return;
+      }
+      applySpeechResult(res.transcript);
+    } catch (e) {
+      setIsListening(!1);
+      setVoiceFeedback({ spokenText: "", accuracy: 0, feedback: speechErrorFeedback("error"), quality: "precisa_praticar", isAI: !1 });
     }
   }
 
   function stopVoiceRecognition() {
+    let plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRec;
+    if (plugin && typeof plugin.stop === "function") {
+      try { plugin.stop(); } catch (e) {}
+    }
     if (recRef.current) {
-      try {
-        recRef.current.stop();
-      } catch (e) {}
+      try { recRef.current.stop(); } catch (e) {}
     }
   }
 
@@ -216,27 +206,26 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
 
     let effectiveRating = t;
 
-    if (voiceFeedback) {
-      if (voiceFeedback.accuracy >= 80) {
-        effectiveRating = "good";
+    if (isValidSpeechResult(voiceFeedback)) {
+      let verdict = rateSpeechAndTime(voiceFeedback.accuracy, frontTimeSec, audiosPlayed, cardLimitSec);
+      effectiveRating = verdict.rating;
+      if ("good" === verdict.rating) {
         h.current.correct += 1;
-      } else if (voiceFeedback.accuracy >= 50) {
-        effectiveRating = "hard";
-        h.current.correct += 1;
-        h.current.struggledList.push({
-          word: f.front,
-          reason: 'Voz: ' + voiceFeedback.accuracy + '% (falou "' + voiceFeedback.spokenText + '")',
-          timeSec: Math.round(frontTimeSec),
-          audioUsed: audiosPlayed > 0
-        });
-      } else {
-        effectiveRating = "again";
+      } else if ("again" === verdict.rating) {
         h.current.wrong += 1;
         h.current.struggledList.push({
           word: f.front,
-          reason: "Voz incorreta (" + voiceFeedback.accuracy + "%)",
-          timeSec: Math.round(frontTimeSec),
-          audioUsed: audiosPlayed > 0
+          reason: verdict.reason + (voiceFeedback.spokenText ? ' (falou "' + voiceFeedback.spokenText + '")' : ""),
+          timeSec: verdict.timeSec,
+          audioUsed: verdict.audioUsed
+        });
+      } else {
+        h.current.correct += 1;
+        h.current.struggledList.push({
+          word: f.front,
+          reason: verdict.reason + (voiceFeedback.spokenText ? ' (falou "' + voiceFeedback.spokenText + '")' : ""),
+          timeSec: verdict.timeSec,
+          audioUsed: verdict.audioUsed
         });
       }
     } else {
@@ -412,8 +401,15 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     });
   }
 
+  let speechVerdict = null;
+  if (isValidSpeechResult(voiceFeedback) && f) {
+    let flipMoment = h.current.flipTime || Date.now();
+    let frontTimeSec = Math.max(0.5, (flipMoment - h.current.cardStartTime) / 1000);
+    speechVerdict = rateSpeechAndTime(voiceFeedback.accuracy, frontTimeSec, h.current.audioPlaysCount, f.readingTime);
+  }
+
   return (0, u.jsxs)("div", {
-    className: "max-w-md mx-auto px-4 py-6 flex flex-col justify-between min-h-screen",
+    className: "max-w-md mx-auto px-4 flex flex-col justify-between kid-shell",
     children: [
       (0, u.jsxs)("div", {
         className: "w-full space-y-3",
@@ -422,18 +418,20 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
             className: "flex items-center justify-between",
             children: [
               (0, u.jsx)("button", {
+                type: "button",
                 onClick: a,
-                className: "font-mono text-xs uppercase tracking-wide text-ink-soft hover:text-white transition-colors flex items-center gap-1",
+                className: "tap-xl px-3 font-body text-sm font-medium text-ink-soft hover:text-white transition-colors flex items-center",
                 children: "← Sair"
               }),
               (0, u.jsxs)("p", {
-                className: "font-mono text-xs uppercase tracking-wider text-ink-soft font-semibold",
+                className: "font-body text-sm font-semibold text-white",
                 children: [l + 1, " de ", d]
               })
             ]
           }),
+          !isOnline() ? (0, u.jsx)("p", { className: "font-body text-xs text-amber", children: "Sem internet: a voz do aparelho entra no lugar da voz neural." }) : null,
           (0, u.jsx)("div", {
-            className: "h-1.5 w-full rounded-full bg-base-line overflow-hidden",
+            className: "h-2 w-full rounded-full bg-base-line overflow-hidden",
             children: (0, u.jsx)("div", {
               className: "h-full bg-violet transition-all duration-300",
               style: { width: ((l + 1) / d * 100) + "%" }
@@ -444,58 +442,53 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
       (0, u.jsx)("div", {
         className: "w-full my-auto py-4",
         children: (0, u.jsx)("div", {
-          className: "flip-card w-full h-[320px] sm:h-[360px]",
+          className: "flip-card",
           onClick: y,
           children: (0, u.jsxs)("div", {
-            className: "flip-card-inner relative w-full h-full cursor-pointer " + (o ? "is-flipped" : ""),
+            className: "flip-card-inner " + (o ? "is-flipped" : ""),
             children: [
               (0, u.jsxs)("div", {
-                className: "flip-face absolute inset-0 rounded-3xl border border-base-line bg-base-surface shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col items-center justify-between p-7 text-center",
+                className: "flip-face",
                 children: [
                   (0, u.jsxs)("div", {
                     className: "w-full flex items-center justify-between",
                     children: [
-                      (0, u.jsx)("span", { className: "font-mono text-[10px] uppercase tracking-wider text-ink-soft font-medium", children: "Palavra" }),
+                      (0, u.jsx)("span", { className: "font-body text-sm font-semibold text-ink-soft", children: "Leia" }),
                       e.audioHintEnabled ? (0, u.jsxs)("button", {
                         type: "button",
                         onClick: handlePlayFrontAudio,
-                        className: "px-3 py-1.5 min-h-9 rounded-full bg-base-raised hover:bg-violet/20 text-xs text-ink-soft hover:text-violet-light border border-base-line transition-all flex items-center gap-1.5",
-                        title: "Ouvir áudio da palavra (indica dúvida)",
+                        className: "speak-btn tap-xl",
+                        title: "Ouvir a palavra",
+                        "aria-label": "Ouvir a palavra",
                         children: [
-                          (0, u.jsx)("span", { children: "🔊" }),
-                          (0, u.jsx)("span", { className: "font-mono text-[10px] font-medium", children: "Dica de Áudio" })
+                          (0, u.jsx)("span", { "aria-hidden": "true", children: "🔊" })
                         ]
                       }) : null
                     ]
                   }),
-                  (0, u.jsx)("div", {
-                    className: "my-auto",
-                    children: (0, u.jsx)("p", { className: "font-display font-bold text-4xl sm:text-5xl tracking-wide text-white leading-tight", children: f.front })
-                  }),
-                  (0, u.jsx)("p", { className: "font-mono text-[11px] uppercase tracking-wider text-violet-light font-medium", children: "toque para virar a ficha 👆" })
+                  (0, u.jsx)("p", { className: "word-hero my-auto", children: f.front }),
+                  (0, u.jsx)("p", { className: "font-body text-sm font-medium " + (flipHint ? "text-amber" : "text-violet-light"), children: flipHint || (mustSpeak ? "Fale a palavra para ver o outro lado" : "Toque na carta para virar") })
                 ]
               }),
               (0, u.jsxs)("div", {
-                className: "flip-face flip-face-back absolute inset-0 rounded-3xl border border-violet/40 bg-base-surface shadow-[0_20px_50px_rgba(110,86,207,0.25)] flex flex-col items-center justify-between p-7 text-center",
+                className: "flip-face flip-face-back",
                 children: [
                   (0, u.jsxs)("div", {
                     className: "w-full flex items-center justify-between",
                     children: [
-                      (0, u.jsx)("span", { className: "font-mono text-[10px] uppercase tracking-wider text-violet-light font-semibold", children: "Significado / Resposta" }),
+                      (0, u.jsx)("span", { className: "font-body text-sm font-semibold text-violet-light", children: "Resposta" }),
                       (0, u.jsx)("button", {
                         type: "button",
                         onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(f.backAudio, f.back); },
-                        className: "min-w-10 min-h-10 text-lg text-violet-light hover:scale-110 transition-transform",
+                        className: "speak-btn tap-xl",
                         title: "Ouvir resposta",
+                        "aria-label": "Ouvir resposta",
                         children: "🔊"
                       })
                     ]
                   }),
-                  (0, u.jsx)("div", {
-                    className: "my-auto",
-                    children: (0, u.jsx)("p", { className: "font-display font-medium text-2xl sm:text-3xl text-white leading-snug", children: f.back })
-                  }),
-                  (0, u.jsx)("p", { className: "font-mono text-[11px] uppercase tracking-wider text-ink-soft", children: "Avalie como foi a sua leitura abaixo 👇" })
+                  (0, u.jsx)("p", { className: "meaning-hero my-auto", children: f.back || "—" }),
+                  (0, u.jsx)("p", { className: "font-body text-sm font-medium text-ink-soft", children: "Como foi a leitura?" })
                 ]
               })
             ]
@@ -503,66 +496,84 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
         })
       }),
       (0, u.jsxs)("div", {
-        className: "w-full space-y-3 pt-2 pb-4",
+        className: "w-full space-y-3 pt-2",
         children: [
           voiceFeedback ? (0, u.jsxs)("div", {
-            className: "p-3 rounded-2xl border text-center font-mono text-xs space-y-0.5 animate-in fade-in-0 " + (voiceFeedback.accuracy >= 80 ? "bg-teal-dim border-teal/40 text-teal" : voiceFeedback.accuracy >= 50 ? "bg-amber-dim border-amber/40 text-amber" : "bg-coral-dim border-coral/40 text-coral"),
+            className: "p-4 rounded-2xl border text-center font-body space-y-1 animate-in fade-in-0 " + (voiceFeedback.accuracy >= 80 ? "bg-teal-dim border-teal/40 text-teal" : voiceFeedback.accuracy >= 50 ? "bg-amber-dim border-amber/40 text-amber" : "bg-coral-dim border-coral/40 text-coral"),
             children: [
-              (0, u.jsxs)("p", { className: "font-semibold text-sm", children: [voiceFeedback.feedback, " (", voiceFeedback.accuracy, "% de acerto)"] }),
-              voiceFeedback.spokenText ? (0, u.jsxs)("p", { className: "text-[11px] opacity-90", children: ['Você falou: "', voiceFeedback.spokenText, '"'] }) : null
+              (0, u.jsxs)("p", { className: "font-semibold text-base", children: [voiceFeedback.feedback, " (", voiceFeedback.accuracy, "%)"] }),
+              voiceFeedback.spokenText ? (0, u.jsxs)("p", { className: "text-sm opacity-90", children: ['Você falou: "', voiceFeedback.spokenText, '"'] }) : null,
+              speechVerdict ? (0, u.jsxs)("p", { className: "text-sm opacity-90", children: [speechVerdict.timeSec, "s para ler · volta em ", v[speechVerdict.rating] || (speechVerdict.rating === "again" ? "1m" : "depois")] }) : null
             ]
           }) : null,
           !o ? (0, u.jsxs)("div", {
-            className: "space-y-2.5",
+            className: "space-y-3",
             children: [
-              isListening ? (0, u.jsxs)("button", {
+              needMicInfo ? (0, u.jsxs)("div", {
+                className: "p-4 rounded-2xl bg-base-raised border border-base-line space-y-3",
+                children: [
+                  (0, u.jsx)("p", { className: "font-body text-sm text-white", children: "Vamos ouvir você ler em voz alta. O som fica neste celular — só vai para a internet se os pais ligarem o Gemini." }),
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: () => { rememberMicExplained(); setNeedMicInfo(!1); startVoiceRecognition(); },
+                    className: "study-action w-full rounded-2xl bg-violet text-white font-body text-lg font-semibold",
+                    children: "Pode ouvir"
+                  })
+                ]
+              }) : isListening ? (0, u.jsxs)("button", {
                 type: "button",
                 onClick: stopVoiceRecognition,
-                className: "w-full py-4 rounded-2xl bg-coral text-white font-body text-base font-semibold animate-pulse flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(229,72,77,0.4)]",
+                className: "study-action w-full rounded-2xl bg-coral text-white font-body text-lg font-semibold animate-pulse flex items-center justify-center gap-2",
                 children: [
                   (0, u.jsx)("span", { children: "⏹" }),
-                  " Ouvindo você falar... Toque para parar"
+                  " Ouvindo… toque para parar"
                 ]
               }) : isAnalyzingAI ? (0, u.jsxs)("div", {
-                className: "w-full py-4 rounded-2xl bg-violet/20 text-violet-light font-body text-sm font-medium flex items-center justify-center gap-2 border border-violet/40",
+                className: "study-action w-full rounded-2xl bg-violet-dim text-violet-light font-body text-base font-medium flex items-center justify-center gap-2 border border-violet/40",
                 children: [
                   (0, u.jsx)("span", { className: "animate-spin", children: "✨" }),
-                  " IA avaliando leitura..."
+                  " Avaliando a leitura..."
                 ]
               }) : (0, u.jsxs)("button", {
                 type: "button",
                 onClick: startVoiceRecognition,
-                className: "w-full py-4 rounded-2xl bg-violet text-white hover:bg-violet-light font-body text-base font-semibold shadow-[0_8px_24px_rgba(110,86,207,0.35)] transition-all flex items-center justify-center gap-2.5 active:scale-[0.98]",
+                className: "study-action w-full rounded-2xl bg-violet text-white font-body text-lg font-semibold flex items-center justify-center gap-2",
                 children: [
-                  (0, u.jsx)("span", { className: "text-xl", children: "🎙️" }),
-                  " FALE (Ler em voz alta)"
+                  (0, u.jsx)("span", { className: "text-2xl", children: "🎙️" }),
+                  " Fale a palavra"
                 ]
               }),
-              e.skipRecordingEnabled ? (0, u.jsx)("button", {
+              e.skipRecordingEnabled && !mustSpeak ? (0, u.jsx)("button", {
+                type: "button",
                 onClick: y,
-                className: "w-full font-body text-xs font-medium rounded-xl bg-base-raised/70 border border-base-line py-3 text-ink-soft hover:text-white transition-all text-center",
-                children: "ou mostrar resposta sem gravar ➔"
+                className: "w-full font-body text-sm font-medium rounded-2xl bg-base-raised border border-base-line py-3 text-ink-soft",
+                children: "Ver resposta sem gravar"
               }) : null
             ]
+          }) : mustSpeak && isValidSpeechResult(voiceFeedback) ? (0, u.jsx)("button", {
+            type: "button",
+            onClick: () => b(speechVerdict ? speechVerdict.rating : "good"),
+            className: "study-action w-full rounded-2xl bg-violet text-white font-body text-lg font-semibold flex items-center justify-center",
+            children: "Continuar"
           }) : (0, u.jsxs)("div", {
-            className: "grid grid-cols-2 gap-3 animate-in fade-in-0",
+            className: "flex gap-3 animate-in fade-in-0",
             children: [
               (0, u.jsxs)("button", {
                 type: "button",
                 onClick: () => b("again"),
-                className: "rounded-2xl py-4 flex flex-col items-center justify-center gap-1 bg-coral-dim border border-coral/30 text-coral hover:bg-coral hover:text-white transition-all shadow-sm active:scale-[0.98]",
+                className: "study-action flex-1 rounded-2xl flex flex-col items-center justify-center gap-1 bg-coral-dim border border-coral/30 text-coral",
                 children: [
-                  (0, u.jsxs)("span", { className: "font-body text-base font-semibold flex items-center gap-1.5", children: [(0, u.jsx)("span", { children: "❌" }), " Não Lembrei"] }),
-                  (0, u.jsxs)("span", { className: "font-mono text-xs opacity-80", children: ["rever em ", v.again || "1m"] })
+                  (0, u.jsx)("span", { className: "font-body text-lg font-semibold", children: "❌ Não sei" }),
+                  (0, u.jsx)("span", { className: "font-body text-xs opacity-80", children: "de novo já" })
                 ]
               }),
               (0, u.jsxs)("button", {
                 type: "button",
                 onClick: () => b("good"),
-                className: "rounded-2xl py-4 flex flex-col items-center justify-center gap-1 bg-teal-dim border border-teal/30 text-teal hover:bg-teal hover:text-white transition-all shadow-sm active:scale-[0.98]",
+                className: "study-action flex-1 rounded-2xl flex flex-col items-center justify-center gap-1 bg-teal-dim border border-teal/30 text-teal",
                 children: [
-                  (0, u.jsxs)("span", { className: "font-body text-base font-semibold flex items-center gap-1.5", children: [(0, u.jsx)("span", { children: "✅" }), " Acertei!"] }),
-                  (0, u.jsxs)("span", { className: "font-mono text-xs opacity-80", children: ["rever em ", v.good || "1d"] })
+                  (0, u.jsx)("span", { className: "font-body text-lg font-semibold", children: "✅ Acertei" }),
+                  (0, u.jsx)("span", { className: "font-body text-xs opacity-80", children: v.good || "depois" })
                 ]
               })
             ]

@@ -2,10 +2,11 @@ function ep({ initial: e, onSave: t, onCancel: n }) {
   let [r, a] = (0, c.useState)(e?.name ?? ""),
     [l, i] = (0, c.useState)(e?.description ?? ""),
     [audioHint, setAudioHint] = (0, c.useState)(e?.audioHintEnabled ?? !1),
-    [skipRec, setSkipRec] = (0, c.useState)(e?.skipRecordingEnabled ?? !1);
+    [skipRec, setSkipRec] = (0, c.useState)(e?.skipRecordingEnabled ?? !1),
+    [requireSpeech, setRequireSpeech] = (0, c.useState)(e?.requireSpeechToFlip ?? !1);
   return (0, u.jsxs)("form", {
     className: "space-y-4",
-    onSubmit: e => { e.preventDefault(); r.trim() && t(r.trim(), l.trim(), audioHint, skipRec); },
+    onSubmit: e => { e.preventDefault(); r.trim() && t(r.trim(), l.trim(), audioHint, requireSpeech ? !1 : skipRec, requireSpeech); },
     children: [
       (0, u.jsxs)("div", {
         children: [
@@ -65,10 +66,33 @@ function ep({ initial: e, onSave: t, onCancel: n }) {
               }),
               (0, u.jsx)("button", {
                 type: "button",
-                onClick: () => setSkipRec(e => !e),
-                className: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 " + (skipRec ? "bg-violet" : "bg-base-strong"),
+                onClick: () => { if (!requireSpeech) setSkipRec(e => !e); },
+                className: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 " + (skipRec && !requireSpeech ? "bg-violet" : "bg-base-strong"),
                 children: (0, u.jsx)("span", {
-                  className: "inline-block h-4 w-4 transform rounded-full bg-white transition-transform " + (skipRec ? "translate-x-6" : "translate-x-1")
+                  className: "inline-block h-4 w-4 transform rounded-full bg-white transition-transform " + (skipRec && !requireSpeech ? "translate-x-6" : "translate-x-1")
+                })
+              })
+            ]
+          }),
+          (0, u.jsxs)("div", {
+            className: "p-3 rounded-xl bg-base-raised border border-base-line flex items-center justify-between gap-3",
+            children: [
+              (0, u.jsxs)("div", {
+                children: [
+                  (0, u.jsx)("p", { className: "text-sm text-white font-medium", children: "🎙️ Falar para virar" }),
+                  (0, u.jsx)("p", { className: "text-[11px] text-ink-soft mt-0.5", children: "O lado B só aparece depois que a criança falar. A nota e as repetições saem da voz + do tempo de leitura." })
+                ]
+              }),
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => setRequireSpeech(e => {
+                  let next = !e;
+                  if (next) setSkipRec(!1);
+                  return next;
+                }),
+                className: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 " + (requireSpeech ? "bg-violet" : "bg-base-strong"),
+                children: (0, u.jsx)("span", {
+                  className: "inline-block h-4 w-4 transform rounded-full bg-white transition-transform " + (requireSpeech ? "translate-x-6" : "translate-x-1")
                 })
               })
             ]

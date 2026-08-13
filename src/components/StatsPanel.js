@@ -1,4 +1,4 @@
-function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onClearHistory: t, onClose: n }) {
+function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onClearHistory: t, onClose: n }) {
   let [activeTab, setActiveTab] = (0, c.useState)("stats"),
     [geminiKey, setGeminiKey] = (0, c.useState)(aiCfg?.geminiKey || ""),
     [geminiModel, setGeminiModel] = (0, c.useState)(aiCfg?.geminiModel || "gemini-2.0-flash"),
@@ -10,7 +10,8 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
     r = e.reduce((e, t) => e + (t.durationSeconds || 0), 0),
     a = e.reduce((e, t) => e + (t.totalReviews || 0), 0),
     l = e.reduce((e, t) => e + (t.correctCount || 0), 0),
-    i = a > 0 ? Math.round((l / a) * 100) : 0;
+    i = a > 0 ? Math.round((l / a) * 100) : 0,
+    digest = buildParentDigest(e, cardsList || []);
 
   (0, c.useEffect)(() => {
     function loadVoices() {
@@ -42,7 +43,8 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
 
   function handleSaveAIConfig(ev) {
     ev.preventDefault();
-    let newCfg = { provider, geminiKey: geminiKey.trim(), geminiModel: geminiModel.trim() || "gemini-2.0-flash", ttsVoice: selectedVoice };
+    let keyToSave = geminiKey.trim() || aiCfg?.geminiKey || "";
+    let newCfg = { provider, geminiKey: keyToSave, geminiModel: geminiModel.trim() || "gemini-2.0-flash", ttsVoice: selectedVoice };
     if (onSaveAI) onSaveAI(newCfg);
     setSavedMsg("Configurações salvas com sucesso!");
     setTimeout(() => setSavedMsg(null), 3000);
@@ -74,6 +76,21 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
       "stats" === activeTab ? (0, u.jsxs)("div", {
         className: "space-y-4",
         children: [
+          (0, u.jsxs)("div", {
+            className: "p-4 rounded-xl bg-violet-dim border border-violet/40 space-y-2",
+            children: [
+              (0, u.jsx)("p", { className: "font-display font-medium text-white", children: "Esta semana" }),
+              (0, u.jsxs)("p", { className: "text-sm text-ink-soft", children: [digest.sessions, " sessões · cerca de ", digest.minutes, " min"] }),
+              digest.voiceAvg != null ? (0, u.jsxs)("p", { className: "text-sm text-white", children: ["Leitura em voz: ", digest.voiceAvg, "% de acerto (", digest.voiceCount, " tentativas)"] }) : (0, u.jsx)("p", { className: "text-sm text-ink-soft", children: "Ainda não houve leitura em voz nesta semana." }),
+              digest.hardWords.length ? (0, u.jsxs)("div", {
+                children: [
+                  (0, u.jsx)("p", { className: "text-xs text-amber font-semibold mt-1", children: "Travou nestas palavras:" }),
+                  (0, u.jsx)("p", { className: "text-sm text-white", children: digest.hardWords.map(w => w.word).join(", ") })
+                ]
+              }) : (0, u.jsx)("p", { className: "text-sm text-teal", children: "Nenhuma palavra marcada como difícil nesta semana." }),
+              digest.tomorrow.length ? (0, u.jsxs)("p", { className: "text-sm text-violet-light", children: ["Para estudar em seguida: ", digest.tomorrow.join(", ")] }) : null
+            ]
+          }),
           (0, u.jsxs)("div", {
             className: "grid grid-cols-3 gap-2.5",
             children: [
@@ -289,7 +306,8 @@ function eParentStats({ history: e, aiSettings: aiCfg, onSaveAISettings: onSaveA
               (0, u.jsxs)("div", {
                 children: [
                   (0, u.jsx)("label", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Voz do TTS (Português BR)" }),
-                  (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/70 mt-0.5", children: "Vozes neurais funcionam no navegador e no APK. A primeira fala de cada palavra pede internet (~1s); as seguintes saem do cache." })
+                  (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/70 mt-0.5", children: "Vozes neurais pedem internet na primeira fala. Sem rede, o app usa a voz do aparelho." }),
+                  !isOnline() && selectedVoice.startsWith("edge:") ? (0, u.jsx)("p", { className: "text-[10px] text-amber mt-1", children: "Sem internet agora: a voz neural fica em pausa e o aparelho fala no lugar." }) : null
                 ]
               }),
               voices.length > 0 ? (0, u.jsxs)("select", {

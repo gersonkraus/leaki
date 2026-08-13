@@ -1,7 +1,7 @@
 function es({ deck: e, cards: t, isParentMode: isParent, onBack: n, onStudy: r, onNewCard: a, onEditCard: l, onDeleteCard: i }) {
   let o = t.filter(X).length;
   return (0, u.jsxs)("div", {
-    className: "max-w-3xl mx-auto px-4 sm:px-6 py-8 min-h-screen flex flex-col",
+    className: "max-w-3xl mx-auto px-4 kid-shell flex flex-col",
     children: [
       (0, u.jsx)("button", {
         onClick: n,
@@ -22,7 +22,7 @@ function es({ deck: e, cards: t, isParentMode: isParent, onBack: n, onStudy: r, 
           (0, u.jsxs)("button", {
             onClick: r,
             disabled: 0 === o,
-            className: "shrink-0 font-body text-base font-semibold rounded-full bg-violet px-6 py-3.5 text-white hover:bg-violet-light shadow-[0_8px_24px_rgba(110,86,207,0.35)] transition-all disabled:opacity-30 disabled:shadow-none disabled:cursor-not-allowed flex items-center gap-2",
+            className: "study-action shrink-0 font-body text-base font-semibold rounded-full bg-violet px-6 text-white disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2",
             children: [
               (0, u.jsx)("span", { children: "📖" }),
               " Começar Leitura (", o, ")"
@@ -53,62 +53,64 @@ function es({ deck: e, cards: t, isParentMode: isParent, onBack: n, onStudy: r, 
           }) : null
         ]
       }) : (0, u.jsx)("ul", {
-        className: "rounded-2xl border border-base-line bg-base-surface/70 divide-y divide-base-line overflow-hidden",
+        className: "ficha-list",
         children: t.map(e => {
           let t = Z(e);
           return (0, u.jsxs)("li", {
-            className: "group px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-base-raised/60 transition-colors",
+            className: "ficha-card",
             children: [
               (0, u.jsxs)("div", {
-                className: "min-w-0 flex-1",
+                className: "flex items-start justify-between gap-3",
                 children: [
-                  (0, u.jsxs)("div", {
-                    className: "flex items-center gap-2 flex-wrap",
-                    children: [
-                      (0, u.jsx)("span", { className: "font-medium text-white text-base", children: e.front }),
-                      (0, u.jsx)("button", {
-                        type: "button",
-                        onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(e.frontAudio, e.front); },
-                        className: "shrink-0 min-w-8 min-h-8 px-1.5 text-ink-soft hover:text-violet-light transition-colors text-sm",
-                        title: e.frontAudio ? "Ouvir gravação" : "Ouvir pronúncia automática (TTS)",
-                        children: "🔊"
-                      }),
-                      (0, u.jsxs)("span", { className: "text-ink-soft text-sm", children: [" — ", e.back] }),
-                      (0, u.jsx)("button", {
-                        type: "button",
-                        onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(e.backAudio, e.back); },
-                        className: "shrink-0 min-w-8 min-h-8 px-1.5 text-ink-soft hover:text-violet-light transition-colors text-sm",
-                        title: e.backAudio ? "Ouvir gravação" : "Ouvir pronúncia automática (TTS)",
-                        children: "🔊"
-                      })
-                    ]
-                  }),
-                  (0, u.jsxs)("p", {
-                    className: "font-mono text-[10px] uppercase tracking-wide mt-1 flex gap-3 flex-wrap text-ink-soft",
-                    children: [
-                      (0, u.jsx)("span", { className: eo[t], children: ei[t] }),
-                      (0, u.jsxs)("span", { className: "text-ink-soft/70", children: ["intervalo ", J(e.scheduled_days)] }),
-                      e.readingTime ? (0, u.jsxs)("span", { className: "text-violet-light font-medium", children: ["⏱️ ", e.readingTime, "s"] }) : null,
-                      X(e) ? (0, u.jsx)("span", { className: "text-coral font-medium", children: "• para hoje" }) : null
-                    ]
+                  (0, u.jsx)("p", { className: "ficha-word min-w-0 flex-1", children: e.front }),
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(e.frontAudio, e.front); },
+                    className: "speak-btn shrink-0",
+                    title: "Ouvir a palavra",
+                    "aria-label": "Ouvir " + e.front,
+                    children: "🔊"
                   })
                 ]
               }),
-              isParent ? (0, u.jsxs)("div", {
-                className: "shrink-0 flex gap-1.5",
+              e.back ? (0, u.jsxs)("div", {
+                className: "flex items-center justify-between gap-3",
                 children: [
+                  (0, u.jsx)("p", { className: "font-body text-base text-ink-soft min-w-0 flex-1", children: e.back }),
                   (0, u.jsx)("button", {
-                    onClick: () => l(e),
-                    className: "font-mono text-[10px] uppercase tracking-wide px-2.5 py-1 rounded-full bg-base-raised text-ink-soft hover:text-ink transition-colors",
-                    children: "editar"
-                  }),
-                  (0, u.jsx)("button", {
-                    onClick: () => i(e.id),
-                    className: "font-mono text-[10px] uppercase tracking-wide px-2.5 py-1 rounded-full bg-coral-dim text-coral hover:bg-coral hover:text-white transition-colors",
-                    children: "excluir"
+                    type: "button",
+                    onClick: ev => { ev.preventDefault(); ev.stopPropagation(); ec(e.backAudio, e.back); },
+                    className: "speak-btn shrink-0",
+                    title: "Ouvir o significado",
+                    "aria-label": "Ouvir significado",
+                    children: "🔊"
                   })
                 ]
-              }) : null
+              }) : null,
+              (0, u.jsxs)("div", {
+                className: "flex items-center justify-between gap-2 flex-wrap pt-1",
+                children: [
+                  X(e) ? (0, u.jsx)("span", { className: "font-body text-xs font-semibold rounded-full bg-coral-dim text-coral px-3 py-1", children: "para hoje" }) : (0, u.jsx)("span", { className: "font-body text-xs text-teal", children: "em dia" }),
+                  isParent ? (0, u.jsxs)("div", {
+                    className: "flex gap-2",
+                    children: [
+                      (0, u.jsx)("span", { className: "font-mono text-[10px] uppercase " + eo[t], children: ei[t] }),
+                      (0, u.jsx)("button", {
+                        type: "button",
+                        onClick: () => l(e),
+                        className: "font-body text-xs px-3 py-2 rounded-full bg-base-raised text-ink-soft",
+                        children: "editar"
+                      }),
+                      (0, u.jsx)("button", {
+                        type: "button",
+                        onClick: () => i(e.id),
+                        className: "font-body text-xs px-3 py-2 rounded-full bg-coral-dim text-coral",
+                        children: "excluir"
+                      })
+                    ]
+                  }) : null
+                ]
+              })
             ]
           }, e.id);
         })

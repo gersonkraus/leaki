@@ -1,6 +1,6 @@
 {
   "name": "leaki",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Leaki — Catálogo de repetição espaçada (Capacitor Android)",
   "scripts": {
@@ -13,6 +13,9 @@
     "open:android": "npx cap open android",
     "android": "npm run sync && npx cap open android",
     "test:tts": "node scripts/test-edge-tts.mjs",
+    "test:ui": "node scripts/test-ui-cards.mjs",
+    "test:study": "node scripts/test-study-rate.mjs",
+    "test:parent": "node scripts/test-parent-digest.mjs",
     "build:apk": "npm run sync && cd android && ./gradlew assembleDebug",
     "build:release": "npm run sync && cd android && ./gradlew assembleRelease"
   },

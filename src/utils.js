@@ -48,6 +48,42 @@ function calculateSpeechAccuracy(e, t) {
   return Math.max(0, Math.round((1 - i / o) * 100));
 }
 
+function isValidSpeechResult(fb) {
+  return !!(fb && String(fb.spokenText || "").trim());
+}
+
+function rateSpeechAndTime(accuracy, frontTimeSec, audioPlaysCount, readingTimeSec) {
+  let acc = Number(accuracy);
+  if (!Number.isFinite(acc)) acc = 0;
+  let timeSec = Math.max(0, Number(frontTimeSec) || 0);
+  let plays = Math.max(0, Number(audioPlaysCount) || 0);
+  let limit = Number(readingTimeSec);
+  if (!Number.isFinite(limit) || limit <= 0) limit = 7;
+  let severe = Math.max(limit * 2, limit + 8);
+  let roundedTime = Math.round(timeSec);
+  if (acc < 50) {
+    return { rating: "again", reason: "Voz incorreta (" + Math.round(acc) + "%)", timeSec: roundedTime, audioUsed: plays > 0 };
+  }
+  if (acc < 80) {
+    return { rating: "hard", reason: "Voz: " + Math.round(acc) + "%", timeSec: roundedTime, audioUsed: plays > 0 };
+  }
+  if (plays >= 2 || timeSec >= severe) {
+    return {
+      rating: "hard",
+      reason: "Leu certo, mas com muita dificuldade (" + roundedTime + "s / limite " + limit + "s" + (plays > 0 ? ", " + plays + "x áudio" : "") + ")",
+      timeSec: roundedTime,
+      audioUsed: plays > 0
+    };
+  }
+  if (plays >= 1) {
+    return { rating: "hard", reason: "Leu certo, mas precisou ouvir o áudio", timeSec: roundedTime, audioUsed: !0 };
+  }
+  if (timeSec > limit) {
+    return { rating: "hard", reason: "Leu certo, mas hesitou (" + roundedTime + "s / limite " + limit + "s)", timeSec: roundedTime, audioUsed: !1 };
+  }
+  return { rating: "good", reason: "Leitura correta e no tempo", timeSec: roundedTime, audioUsed: !1 };
+}
+
 const EDGE_TTS_VOICES = [
   { id: "pt-BR-FranciscaNeural", label: "Francisca (Neural)", gender: "feminina" },
   { id: "pt-BR-AntonioNeural", label: "Antonio (Neural)", gender: "masculina" },
@@ -94,6 +130,22 @@ function isNativeApp() {
   } catch (e) {
     return false;
   }
+}
+
+function isOnline() {
+  return typeof navigator === "undefined" || navigator.onLine !== !1;
+}
+
+let _micExplained = !1;
+
+function wasMicExplained() {
+  if (_micExplained) return !0;
+  try { return sessionStorage.getItem("leaki-mic-ok") === "1"; } catch (e) { return !1; }
+}
+
+function rememberMicExplained() {
+  _micExplained = !0;
+  try { sessionStorage.setItem("leaki-mic-ok", "1"); } catch (e) {}
 }
 
 function getBrazilianVoices() {
@@ -291,6 +343,7 @@ async function speakWordTTS(text) {
     let blob = await getCachedTtsBlob(key);
     if (gen !== _ttsSpeakGen) return;
     if (!blob) {
+      if (!isOnline()) throw new Error("offline");
       blob = await synthesizeEdgeAudio(text, voiceId);
       if (gen !== _ttsSpeakGen) return;
       rememberTtsBlob(key, blob);
@@ -300,6 +353,303 @@ async function speakWordTTS(text) {
     console.error("TTS error:", e);
     if (gen === _ttsSpeakGen) speakLocalTTS(text);
   }
+}
+
+async function synthesizeToDataUrl(text) {
+  if (!text || !isEdgeTTSVoice(_ttsVoiceName) || !isOnline()) return "";
+  try {
+    let voiceId = normalizeEdgeVoiceId(_ttsVoiceName);
+    let blob = await getCachedTtsBlob(ttsCacheKey(voiceId, text));
+    if (!blob) {
+      blob = await synthesizeEdgeAudio(text, voiceId);
+      rememberTtsBlob(ttsCacheKey(voiceId, text), blob);
+    }
+    return await new Promise((resolve, reject) => {
+      let reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result || "");
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return "";
+  }
+}
+
+function feedbackFromAccuracy(acc) {
+  return acc >= 80 ? "🌟 Excelente leitura!" : acc >= 50 ? "🟨 Quase lá! Pratique o som." : "❌ Pratique mais uma vez.";
+}
+
+function speechQuality(acc) {
+  return acc >= 80 ? "excelente" : acc >= 50 ? "quase_la" : "precisa_praticar";
+}
+
+async function recognizeSpeechPt() {
+  if (isNativeApp()) {
+    let plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRec;
+    if (plugin && typeof plugin.listen === "function") {
+      try {
+        let res = await plugin.listen({ language: "pt-BR" });
+        return { transcript: (res && res.transcript) || "", error: null, source: "native" };
+      } catch (err) {
+        let msg = String(err && (err.message || err) || "error");
+        if (msg === "unavailable") {
+          /* fall through to web */
+        } else {
+          return { transcript: "", error: msg, source: "native" };
+        }
+      }
+    }
+  }
+  return await recognizeSpeechWeb();
+}
+
+function recognizeSpeechWeb() {
+  return new Promise(resolve => {
+    let SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      resolve({ transcript: "", error: "unavailable", source: "web" });
+      return;
+    }
+    try {
+      let recognition = new SpeechRec();
+      recognition.lang = "pt-BR";
+      recognition.interimResults = !1;
+      recognition.maxAlternatives = 1;
+      let settled = !1;
+      let timer = setTimeout(() => {
+        try { recognition.stop(); } catch (e) {}
+      }, 8000);
+      function done(result) {
+        if (settled) return;
+        settled = !0;
+        clearTimeout(timer);
+        resolve(result);
+      }
+      recognition.onresult = event => {
+        let transcript = event.results?.[0]?.[0]?.transcript || "";
+        done({ transcript, error: transcript.trim() ? null : "no-speech", source: "web" });
+      };
+      recognition.onerror = event => {
+        done({ transcript: "", error: event.error || "error", source: "web" });
+      };
+      recognition.onend = () => {
+        done({ transcript: "", error: "no-speech", source: "web" });
+      };
+      recognition.start();
+    } catch (e) {
+      resolve({ transcript: "", error: "error", source: "web" });
+    }
+  });
+}
+
+function speechErrorFeedback(code) {
+  if (code === "not-allowed" || code === "service-not-allowed") {
+    return "Permissão do microfone negada. Permita o acesso ao microfone.";
+  }
+  if (code === "no-speech" || code === "no-match") {
+    return "Nenhuma fala detectada. Tente falar mais alto e perto do microfone.";
+  }
+  if (code === "network") {
+    return "Sem rede para reconhecer a voz. Tente de novo ou baixe o pacote de voz do Android.";
+  }
+  if (code === "unavailable") {
+    return "Reconhecimento de voz não disponível neste aparelho.";
+  }
+  return "Erro no reconhecimento de voz. Tente novamente.";
+}
+
+function bufToB64(buf) {
+  let bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function b64ToBuf(b64) {
+  let bin = atob(b64);
+  let bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function randomBytes(n) {
+  let a = new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return a;
+}
+
+async function derivePinBits(pin, saltB64) {
+  let enc = new TextEncoder();
+  let key = await crypto.subtle.importKey("raw", enc.encode(String(pin)), "PBKDF2", !1, ["deriveBits"]);
+  return crypto.subtle.deriveBits({ name: "PBKDF2", salt: b64ToBuf(saltB64), iterations: 1e5, hash: "SHA-256" }, key, 256);
+}
+
+async function hashPin(pin, saltB64) {
+  return bufToB64(await derivePinBits(pin, saltB64));
+}
+
+async function deriveAesKey(pin, saltB64) {
+  let enc = new TextEncoder();
+  let base = await crypto.subtle.importKey("raw", enc.encode(String(pin)), "PBKDF2", !1, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64ToBuf(saltB64), iterations: 1e5, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, !1, ["encrypt", "decrypt"]);
+}
+
+async function encryptSecret(plain, pin, saltB64) {
+  if (!plain) return { enc: "", iv: "" };
+  let key = await deriveAesKey(pin, saltB64);
+  let iv = randomBytes(12);
+  let data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plain));
+  return { enc: bufToB64(data), iv: bufToB64(iv.buffer) };
+}
+
+async function decryptSecret(enc, iv, pin, saltB64) {
+  if (!enc || !iv) return "";
+  let key = await deriveAesKey(pin, saltB64);
+  let data = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(iv) }, key, b64ToBuf(enc));
+  return new TextDecoder().decode(data);
+}
+
+let _unlockedPin = "";
+
+function setUnlockedPin(pin) {
+  _unlockedPin = pin || "";
+}
+
+function getUnlockedPin() {
+  return _unlockedPin;
+}
+
+function hasParentPin(cfg) {
+  return !!(cfg && cfg.pinHash && cfg.pinSalt);
+}
+
+function persistableAISettings(cfg) {
+  let copy = Object.assign({}, cfg || {});
+  if (copy.pinHash && (copy.geminiKeyEnc || copy.geminiKey)) {
+    copy.geminiKey = "";
+  }
+  return copy;
+}
+
+async function createParentPin(pin, cfg) {
+  let salt = bufToB64(randomBytes(16).buffer);
+  let pinHash = await hashPin(pin, salt);
+  let next = Object.assign({}, cfg || {}, { pinSalt: salt, pinHash });
+  if (cfg && cfg.geminiKey) {
+    let sealed = await encryptSecret(cfg.geminiKey, pin, salt);
+    next.geminiKeyEnc = sealed.enc;
+    next.geminiKeyIv = sealed.iv;
+    next.geminiKey = cfg.geminiKey;
+  }
+  setUnlockedPin(pin);
+  return next;
+}
+
+async function verifyParentPin(pin, cfg) {
+  if (!hasParentPin(cfg)) return !1;
+  let hashed = await hashPin(pin, cfg.pinSalt);
+  return hashed === cfg.pinHash;
+}
+
+async function unlockParentSettings(pin, cfg) {
+  if (!(await verifyParentPin(pin, cfg))) return null;
+  setUnlockedPin(pin);
+  let next = Object.assign({}, cfg);
+  if (cfg.geminiKeyEnc && cfg.geminiKeyIv) {
+    try {
+      next.geminiKey = await decryptSecret(cfg.geminiKeyEnc, cfg.geminiKeyIv, pin, cfg.pinSalt);
+    } catch (e) {
+      next.geminiKey = "";
+    }
+  }
+  return next;
+}
+
+async function sealGeminiKey(cfg, plainKey) {
+  let pin = getUnlockedPin();
+  let next = Object.assign({}, cfg, { geminiKey: plainKey || "" });
+  if (pin && cfg && cfg.pinSalt) {
+    let sealed = await encryptSecret(plainKey || "", pin, cfg.pinSalt);
+    next.geminiKeyEnc = sealed.enc;
+    next.geminiKeyIv = sealed.iv;
+  }
+  return next;
+}
+
+function resetParentPin(cfg) {
+  setUnlockedPin("");
+  let next = Object.assign({}, cfg || {});
+  delete next.pinHash;
+  delete next.pinSalt;
+  delete next.geminiKeyEnc;
+  delete next.geminiKeyIv;
+  next.geminiKey = "";
+  return next;
+}
+
+function buildParentDigest(history, cards, nowMs) {
+  let now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  let weekAgo = now - 7 * 864e5;
+  let recent = (history || []).filter(h => {
+    let t = new Date(h.date).getTime();
+    return Number.isFinite(t) && t >= weekAgo;
+  });
+  let voice = [];
+  let struggled = [];
+  recent.forEach(h => {
+    (h.voiceAttempts || []).forEach(va => voice.push(va));
+    (h.struggledCards || []).forEach(sc => struggled.push(sc));
+  });
+  let wordMap = new Map();
+  struggled.forEach(sc => {
+    let key = String(sc.word || "").trim();
+    if (!key) return;
+    let cur = wordMap.get(key) || { word: key, count: 0, lastReason: "" };
+    cur.count += 1;
+    cur.lastReason = sc.reason || cur.lastReason;
+    wordMap.set(key, cur);
+  });
+  let hardWords = Array.from(wordMap.values()).sort((a, b) => b.count - a.count).slice(0, 8);
+  let voiceAvg = voice.length ? Math.round(voice.reduce((s, v) => s + (Number(v.accuracy) || 0), 0) / voice.length) : null;
+  let sessions = recent.length;
+  let minutes = Math.round(recent.reduce((s, h) => s + (h.durationSeconds || 0), 0) / 60);
+  let tomorrow = [];
+  (cards || []).forEach(card => {
+    if (!card || !card.front) return;
+    if (!card.due || new Date(card.due).getTime() <= now + 864e5) tomorrow.push(card.front);
+  });
+  tomorrow = [...new Set(tomorrow)].slice(0, 8);
+  return { sessions, minutes, voiceAvg, voiceCount: voice.length, hardWords, tomorrow };
+}
+
+function backupFilename() {
+  return "leaki-" + new Date().toISOString().slice(0, 10) + ".leaki";
+}
+
+async function shareBackupFile(jsonText, filename) {
+  let name = filename || backupFilename();
+  let plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LeakiShare;
+  if (plugin && typeof plugin.shareTextFile === "function") {
+    await plugin.shareTextFile({ filename: name, content: jsonText });
+    return "shared";
+  }
+  let blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
+  let file = new File([blob], name, { type: "application/json" });
+  if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+    await navigator.share({ files: [file], title: "Backup Leaki" });
+    return "shared";
+  }
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 300);
+  return "downloaded";
 }
 
 async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, modelName) {

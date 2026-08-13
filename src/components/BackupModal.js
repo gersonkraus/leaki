@@ -12,36 +12,21 @@ function eBackup({ decks: e, cards: t, history: histList, aiSettings: aiCfg, onI
 
   function k() {
     return JSON.stringify({
-      version: 1,
+      version: 2,
       appName: "Leaki",
       exportedAt: new Date().toISOString(),
       decks: e,
       cards: t,
       history: histList || [],
-      aiSettings: aiCfg || {}
+      aiSettings: persistableAISettings(aiCfg || {})
     }, null, 2);
   }
 
   function S() {
-    try {
-      let e = k();
-      let t = new Blob([e], { type: "application/json;charset=utf-8" });
-      let n = URL.createObjectURL(t);
-      let r = document.createElement("a");
-      let a = new Date().toISOString().slice(0, 10);
-      r.href = n;
-      r.download = "leaki-backup-" + a + ".json";
-      document.body.appendChild(r);
-      r.click();
-      setTimeout(() => {
-        document.body.removeChild(r);
-        URL.revokeObjectURL(n);
-      }, 300);
-      y("Arquivo de backup baixado com sucesso!");
+    shareBackupFile(k(), backupFilename()).then(kind => {
+      y(kind === "shared" ? "Backup enviado. Abra no outro celular e toque em Importar." : "Arquivo .leaki baixado. Envie para o outro aparelho e importe lá.");
       b(null);
-    } catch (e) {
-      b("Erro ao gerar arquivo: " + e.message);
-    }
+    }).catch(err => b("Não foi possível compartilhar: " + (err && err.message ? err.message : err)));
   }
 
   async function _() {
@@ -144,7 +129,7 @@ function eBackup({ decks: e, cards: t, history: histList, aiSettings: aiCfg, onI
           (0, u.jsxs)("div", {
             children: [
               (0, u.jsx)("h4", { className: "font-display font-medium text-white flex items-center gap-1.5", children: [(0, u.jsx)("span", { children: "📤" }), " Exportar Backup"] }),
-              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Gera um arquivo JSON contendo todos os baralhos, fichas, gravações de áudio, histórico e configurações." })
+              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Gera um arquivo .leaki com baralhos, fichas e histórico. Envie pelo WhatsApp, Drive ou cabo e importe no outro aparelho." })
             ]
           }),
           (0, u.jsxs)("div", {
@@ -154,7 +139,7 @@ function eBackup({ decks: e, cards: t, history: histList, aiSettings: aiCfg, onI
                 type: "button",
                 onClick: S,
                 className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-violet text-white hover:bg-violet-light transition-all shadow-[0_4px_16px_rgba(110,86,207,0.3)] flex items-center gap-1.5",
-                children: [(0, u.jsx)("span", { children: "📥" }), " Baixar arquivo (.json)"]
+                children: [(0, u.jsx)("span", { children: "📤" }), " Enviar arquivo (.leaki)"]
               }),
               (0, u.jsx)("button", {
                 type: "button",
@@ -178,7 +163,7 @@ function eBackup({ decks: e, cards: t, history: histList, aiSettings: aiCfg, onI
           (0, u.jsx)("input", {
             ref: x,
             type: "file",
-            accept: ".json,application/json",
+            accept: ".leaki,.json,application/json",
             onChange: N,
             className: "hidden"
           }),
@@ -192,7 +177,7 @@ function eBackup({ decks: e, cards: t, history: histList, aiSettings: aiCfg, onI
                     type: "button",
                     onClick: () => x.current?.click(),
                     className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-base-raised border border-base-strong text-white hover:bg-base-strong transition-colors flex items-center gap-1.5",
-                    children: [(0, u.jsx)("span", { children: "📁" }), " Escolher arquivo (.json)"]
+                    children: [(0, u.jsx)("span", { children: "📁" }), " Escolher arquivo (.leaki)"]
                   }),
                   (0, u.jsx)("button", {
                     type: "button",

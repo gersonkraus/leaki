@@ -1,6 +1,6 @@
 function el({ decks: e, cards: t, isParentMode: isParent, onToggleParentMode: toggleParent, onOpenDeck: n, onEditDeck: r, onDeleteDeck: a, onNewDeck: l, onOpenBackup: i, onOpenStats: o }) {
   return (0, u.jsxs)("div", {
-    className: "max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12 min-h-screen flex flex-col",
+    className: "max-w-3xl mx-auto px-4 kid-shell flex flex-col",
     children: [
       (0, u.jsxs)("header", {
         className: "relative mb-8 pb-5 border-b border-base-line flex items-center justify-between gap-4 flex-wrap",
@@ -70,41 +70,42 @@ function el({ decks: e, cards: t, isParentMode: isParent, onToggleParentMode: to
           })
         ]
       }) : (0, u.jsx)("ul", {
-        className: "grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 content-start",
+        className: "deck-grid flex-1",
         children: e.map(e => {
           let l = t.filter(t => t.deckId === e.id),
             dueCount = l.filter(X).length;
           return (0, u.jsxs)("li", {
-            className: "group relative bg-base-surface/80 border border-base-line rounded-2xl p-5 hover:border-violet/50 hover:bg-base-surface transition-all flex flex-col justify-between shadow-[0_4px_20px_rgba(0,0,0,0.2)]",
+            className: "deck-tile ficha-card",
             children: [
               (0, u.jsxs)("button", {
-                className: "text-left w-full flex-1 flex flex-col justify-between",
+                type: "button",
+                className: "text-left w-full flex-1 flex flex-col justify-between gap-3",
                 onClick: () => n(e.id),
                 children: [
                   (0, u.jsxs)("div", {
-                    className: "flex items-start justify-between gap-3 mb-4",
+                    className: "flex items-start justify-between gap-3",
                     children: [
                       (0, u.jsxs)("div", {
                         className: "min-w-0 flex-1",
                         children: [
-                          (0, u.jsx)("h2", { className: "font-display font-semibold text-xl text-white group-hover:text-violet-light transition-colors truncate", children: e.name }),
-                          e.description ? (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-1 line-clamp-2", children: e.description }) : null
+                          (0, u.jsx)("h2", { className: "deck-title", children: e.name }),
+                          e.description ? (0, u.jsx)("p", { className: "text-sm text-ink-soft mt-1", children: e.description }) : null
                         ]
                       }),
                       dueCount > 0 ? (0, u.jsxs)("span", {
-                        className: "shrink-0 font-mono text-xs font-semibold rounded-full bg-coral-dim text-coral px-3 py-1",
-                        children: [dueCount, " para estudar"]
+                        className: "shrink-0 font-body text-xs font-semibold rounded-full bg-coral-dim text-coral px-3 py-2",
+                        children: [dueCount, " para ler"]
                       }) : (0, u.jsx)("span", {
-                        className: "shrink-0 font-mono text-[10px] text-teal rounded-full bg-teal-dim px-2.5 py-1 uppercase tracking-wider font-semibold",
-                        children: "✓ em dia"
+                        className: "shrink-0 font-body text-xs text-teal rounded-full bg-teal-dim px-3 py-2 font-semibold",
+                        children: "em dia"
                       })
                     ]
                   }),
                   (0, u.jsxs)("div", {
-                    className: "pt-3 border-t border-base-line/60 flex items-center justify-between text-ink-soft font-mono text-xs",
+                    className: "pt-3 border-t border-base-line flex items-center justify-between text-ink-soft font-body text-sm",
                     children: [
-                      (0, u.jsxs)("span", { children: [l.length, " palavras no baralho"] }),
-                      (0, u.jsx)("span", { className: "text-violet-light font-body font-medium", children: "Iniciar estudo ➔" })
+                      (0, u.jsxs)("span", { children: [l.length, " palavras"] }),
+                      (0, u.jsx)("span", { className: "text-violet-light font-semibold", children: "Abrir →" })
                     ]
                   })
                 ]
