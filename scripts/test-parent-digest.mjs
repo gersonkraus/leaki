@@ -18,9 +18,12 @@ const stripped = persistableAISettings({
   pinHash: "abc",
   geminiKeyEnc: "enc",
   geminiKey: "AIza-secret",
-  provider: "gemini",
+  openaiKeyEnc: "oenc",
+  openaiKey: "sk-secret",
+  provider: "openai",
 });
 assert.equal(stripped.geminiKey, "");
+assert.equal(stripped.openaiKey, "");
 assert.equal(stripped.geminiKeyEnc, "enc");
 assert.equal(persistableAISettings({ geminiKey: "plain", provider: "native" }).geminiKey, "plain");
 

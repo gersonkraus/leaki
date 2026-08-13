@@ -2,11 +2,14 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
   let [activeTab, setActiveTab] = (0, c.useState)("stats"),
     [geminiKey, setGeminiKey] = (0, c.useState)(aiCfg?.geminiKey || ""),
     [geminiModel, setGeminiModel] = (0, c.useState)(aiCfg?.geminiModel || "gemini-2.0-flash"),
+    [openaiKey, setOpenaiKey] = (0, c.useState)(aiCfg?.openaiKey || ""),
+    [openaiModel, setOpenaiModel] = (0, c.useState)(aiCfg?.openaiModel || "gpt-4o-transcribe"),
     [provider, setProvider] = (0, c.useState)(aiCfg?.provider || "native"),
     [savedMsg, setSavedMsg] = (0, c.useState)(null),
     [voices, setVoices] = (0, c.useState)([]),
     [selectedVoice, setSelectedVoice] = (0, c.useState)(""),
     [ttsTestState, setTtsTestState] = (0, c.useState)(""),
+    [evalRules, setEvalRules] = (0, c.useState)(() => normalizeEvalRules(aiCfg?.evalRules)),
     r = e.reduce((e, t) => e + (t.durationSeconds || 0), 0),
     a = e.reduce((e, t) => e + (t.totalReviews || 0), 0),
     l = e.reduce((e, t) => e + (t.correctCount || 0), 0),
@@ -44,7 +47,16 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
   function handleSaveAIConfig(ev) {
     ev.preventDefault();
     let keyToSave = geminiKey.trim() || aiCfg?.geminiKey || "";
-    let newCfg = { provider, geminiKey: keyToSave, geminiModel: geminiModel.trim() || "gemini-2.0-flash", ttsVoice: selectedVoice };
+    let openaiToSave = openaiKey.trim() || aiCfg?.openaiKey || "";
+    let newCfg = {
+      provider,
+      geminiKey: keyToSave,
+      geminiModel: geminiModel.trim() || "gemini-2.0-flash",
+      openaiKey: openaiToSave,
+      openaiModel: openaiModel.trim() || "gpt-4o-transcribe",
+      ttsVoice: selectedVoice,
+      evalRules: normalizeEvalRules(evalRules)
+    };
     if (onSaveAI) onSaveAI(newCfg);
     setSavedMsg("Configurações salvas com sucesso!");
     setTimeout(() => setSavedMsg(null), 3000);
@@ -220,32 +232,82 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
           (0, u.jsxs)("div", {
             children: [
               (0, u.jsx)("h4", { className: "font-display font-medium text-white", children: "Motor de Análise de Voz & Leitura" }),
-              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Escolha como o aplicativo deve analisar a pronúncia e a leitura em voz alta do seu filho." })
+              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Para máxima qualidade, use OpenAI: ele escreve o que a criança falou, sem completar a palavra da tela. O Leaki aplica as regras depois." })
             ]
           }),
           (0, u.jsxs)("div", {
-            className: "grid grid-cols-2 gap-2",
+            className: "space-y-2",
             children: [
               (0, u.jsxs)("button", {
                 type: "button",
-                onClick: () => setProvider("native"),
-                className: "p-3 rounded-xl border text-left transition-colors " + ("native" === provider ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft hover:text-ink"),
+                onClick: () => setProvider("openai"),
+                className: "w-full p-3 rounded-xl border text-left transition-colors " + ("openai" === provider ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft hover:text-ink"),
                 children: [
-                  (0, u.jsx)("p", { className: "font-medium text-xs flex items-center gap-1", children: [(0, u.jsx)("span", { children: "⚡" }), " Nativo (Grátis)"] }),
-                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Reconhecimento de voz embutido no celular/PC com análise fonética instantânea." })
+                  (0, u.jsx)("p", { className: "font-medium text-xs", children: "OpenAI — melhor qualidade (recomendado)" }),
+                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Transcrição literal (gpt-4o-transcribe / Whisper). Distingue BOLA de BOTA." })
                 ]
               }),
               (0, u.jsxs)("button", {
                 type: "button",
                 onClick: () => setProvider("gemini"),
-                className: "p-3 rounded-xl border text-left transition-colors " + ("gemini" === provider ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft hover:text-ink"),
+                className: "w-full p-3 rounded-xl border text-left transition-colors " + ("gemini" === provider ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft hover:text-ink"),
                 children: [
-                  (0, u.jsx)("p", { className: "font-medium text-xs flex items-center gap-1", children: [(0, u.jsx)("span", { children: "✨" }), " Google Gemini LLM"] }),
-                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Avaliação pedagógica inteligente por IA com modelos Gemini mais recentes." })
+                  (0, u.jsx)("p", { className: "font-medium text-xs", children: "Google Gemini" }),
+                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Ouve o áudio e julga. Bom, mas pode ‘completar’ a palavra. As regras do Leaki limitam isso." })
+                ]
+              }),
+              (0, u.jsxs)("button", {
+                type: "button",
+                onClick: () => setProvider("native"),
+                className: "w-full p-3 rounded-xl border text-left transition-colors " + ("native" === provider ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft hover:text-ink"),
+                children: [
+                  (0, u.jsx)("p", { className: "font-medium text-xs", children: "Nativo do aparelho (grátis, offline)" }),
+                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Mais rápido. Costuma corrigir a fala e esconder troca de letra." })
                 ]
               })
             ]
           }),
+          "openai" === provider ? (0, u.jsxs)("div", {
+            className: "space-y-3 pt-1",
+            children: [
+              (0, u.jsxs)("div", {
+                className: "space-y-1",
+                children: [
+                  (0, u.jsx)("label", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Chave de API da OpenAI" }),
+                  (0, u.jsx)("input", {
+                    type: "password",
+                    value: openaiKey,
+                    onChange: e => setOpenaiKey(e.target.value),
+                    placeholder: "sk-...",
+                    className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-violet transition-colors text-white"
+                  })
+                ]
+              }),
+              (0, u.jsxs)("div", {
+                className: "flex gap-1.5 flex-wrap",
+                children: [
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: () => setOpenaiModel("gpt-4o-transcribe"),
+                    className: "font-mono text-[10px] px-2.5 py-1 rounded-lg border " + ("gpt-4o-transcribe" === openaiModel ? "border-violet bg-violet/20 text-white" : "border-base-line text-ink-soft"),
+                    children: "gpt-4o-transcribe (melhor)"
+                  }),
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: () => setOpenaiModel("whisper-1"),
+                    className: "font-mono text-[10px] px-2.5 py-1 rounded-lg border " + ("whisper-1" === openaiModel ? "border-violet bg-violet/20 text-white" : "border-base-line text-ink-soft"),
+                    children: "whisper-1"
+                  }),
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: () => setOpenaiModel("gpt-4o-mini-transcribe"),
+                    className: "font-mono text-[10px] px-2.5 py-1 rounded-lg border " + ("gpt-4o-mini-transcribe" === openaiModel ? "border-violet bg-violet/20 text-white" : "border-base-line text-ink-soft"),
+                    children: "gpt-4o-mini-transcribe"
+                  })
+                ]
+              })
+            ]
+          }) : null,
           "gemini" === provider ? (0, u.jsxs)("div", {
             className: "space-y-3 pt-1",
             children: [
@@ -303,6 +365,57 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
           (0, u.jsxs)("div", {
             className: "space-y-2 pt-2 border-t border-base-line",
             children: [
+              (0, u.jsx)("p", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Limiares da avaliação" }),
+              (0, u.jsx)("p", { className: "text-[10px] text-ink-soft/70", children: "A fala manda primeiro. Tempo e dica só abaixam a nota se a leitura já estiver boa. Troca de 1 letra não pode passar da nota máxima." }),
+              (0, u.jsxs)("div", { className: "grid grid-cols-3 gap-2", children: [
+                (0, u.jsxs)("label", { className: "space-y-1", children: [
+                  (0, u.jsx)("span", { className: "text-[10px] text-ink-soft", children: "Boa a partir de %" }),
+                  (0, u.jsx)("input", {
+                    type: "number", min: 1, max: 100, value: evalRules.voiceGoodMin,
+                    onChange: ev => setEvalRules(r => normalizeEvalRules({ ...r, voiceGoodMin: ev.target.value })),
+                    className: "w-full bg-base-raised border border-base-line rounded-xl px-2 py-2 text-xs font-mono text-white outline-none focus:border-violet"
+                  })
+                ]}),
+                (0, u.jsxs)("label", { className: "space-y-1", children: [
+                  (0, u.jsx)("span", { className: "text-[10px] text-ink-soft", children: "Erro abaixo de %" }),
+                  (0, u.jsx)("input", {
+                    type: "number", min: 0, max: 99, value: evalRules.voiceHardMin,
+                    onChange: ev => setEvalRules(r => normalizeEvalRules({ ...r, voiceHardMin: ev.target.value })),
+                    className: "w-full bg-base-raised border border-base-line rounded-xl px-2 py-2 text-xs font-mono text-white outline-none focus:border-violet"
+                  })
+                ]}),
+                (0, u.jsxs)("label", { className: "space-y-1", children: [
+                  (0, u.jsx)("span", { className: "text-[10px] text-ink-soft", children: "Máx. 1 letra %" }),
+                  (0, u.jsx)("input", {
+                    type: "number", min: 0, max: 100, value: evalRules.oneLetterMax,
+                    onChange: ev => setEvalRules(r => normalizeEvalRules({ ...r, oneLetterMax: ev.target.value })),
+                    className: "w-full bg-base-raised border border-base-line rounded-xl px-2 py-2 text-xs font-mono text-white outline-none focus:border-violet"
+                  })
+                ]})
+              ]}),
+              (0, u.jsxs)("button", {
+                type: "button",
+                onClick: () => setEvalRules(r => ({ ...r, hintForcesHard: !r.hintForcesHard })),
+                className: "w-full p-3 rounded-xl border text-left " + (evalRules.hintForcesHard ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft"),
+                children: [
+                  (0, u.jsx)("p", { className: "text-xs font-medium", children: evalRules.hintForcesHard ? "Dica 🔊 abaixa a nota" : "Dica 🔊 não abaixa a nota" }),
+                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Se o baralho tiver dica ligada e a criança ouvir, a leitura boa vira reforço." })
+                ]
+              }),
+              (0, u.jsxs)("button", {
+                type: "button",
+                onClick: () => setEvalRules(r => ({ ...r, overtimeForcesHard: !r.overtimeForcesHard })),
+                className: "w-full p-3 rounded-xl border text-left " + (evalRules.overtimeForcesHard ? "border-violet bg-violet-dim text-white" : "border-base-line bg-base-raised text-ink-soft"),
+                children: [
+                  (0, u.jsx)("p", { className: "text-xs font-medium", children: evalRules.overtimeForcesHard ? "Passar do tempo abaixa a nota" : "Tempo não abaixa a nota" }),
+                  (0, u.jsx)("p", { className: "text-[10px] opacity-70 mt-0.5", children: "Usa o limite de segundos cadastrado em cada ficha." })
+                ]
+              })
+            ]
+          }),
+          (0, u.jsxs)("div", {
+            className: "space-y-2 pt-2 border-t border-base-line",
+            children: [
               (0, u.jsxs)("div", {
                 children: [
                   (0, u.jsx)("label", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Voz do TTS (Português BR)" }),
@@ -317,7 +430,15 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
                   setSelectedVoice(name);
                   setTTSVoice(name);
                   setTtsTestState("");
-                  if (onSaveAI) onSaveAI({ provider, geminiKey: geminiKey.trim(), geminiModel: geminiModel.trim() || "gemini-2.0-flash", ttsVoice: name });
+                  if (onSaveAI) onSaveAI({
+                    provider,
+                    geminiKey: geminiKey.trim() || aiCfg?.geminiKey || "",
+                    geminiModel: geminiModel.trim() || "gemini-2.0-flash",
+                    openaiKey: openaiKey.trim() || aiCfg?.openaiKey || "",
+                    openaiModel: openaiModel.trim() || "gpt-4o-transcribe",
+                    ttsVoice: name,
+                    evalRules: normalizeEvalRules(evalRules)
+                  });
                 },
                 className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-violet transition-colors text-white",
                 children: [

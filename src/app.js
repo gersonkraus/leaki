@@ -67,6 +67,9 @@ document.head.appendChild(eg);
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "geminiKey")) {
           merged = await sealGeminiKey(merged, newCfg.geminiKey);
         }
+        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "openaiKey")) {
+          merged = await sealOpenaiKey(merged, newCfg.openaiKey);
+        }
         setAISettings(merged);
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "ttsVoice")) setTTSVoice(newCfg.ttsVoice || "");
       }

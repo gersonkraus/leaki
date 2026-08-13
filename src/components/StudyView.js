@@ -39,6 +39,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
   }, [l, f]);
 
   let mustSpeak = !!e.requireSpeechToFlip;
+  let evalRules = normalizeEvalRules(aiCfg && aiCfg.evalRules);
 
   function playBackSide() {
     if (f && f.backAudio) {
@@ -86,14 +87,14 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     }
   }
 
-  function applySpeechResult(transcript) {
-    let acc = calculateSpeechAccuracy(transcript, f.front);
+  function applySpeechResult(transcript, isAI) {
+    let acc = calculateSpeechAccuracy(transcript, f.front, evalRules);
     let fb = {
       spokenText: transcript,
       accuracy: acc,
       feedback: feedbackFromAccuracy(acc),
       quality: speechQuality(acc),
-      isAI: !1
+      isAI: !!isAI
     };
     setVoiceFeedback(fb);
     h.current.voiceAttempts.push({ word: f.front, spoken: transcript, accuracy: acc, feedback: fb.feedback });
@@ -110,8 +111,9 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     setIsListening(!0);
     setIsAnalyzingAI(!1);
 
+    let useOpenAI = aiCfg?.provider === "openai" && !!aiCfg?.openaiKey;
     let useGemini = aiCfg?.provider === "gemini" && !!aiCfg?.geminiKey;
-    if (useGemini) {
+    if (useOpenAI || useGemini) {
       try {
         let stream = await navigator.mediaDevices.getUserMedia({ audio: !0 });
         mediaStreamRef.current = stream;
@@ -129,7 +131,13 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
             let reader = new FileReader();
             reader.onloadend = async () => {
               try {
-                let res = await analyzeWithGemini(reader.result, recorder.mimeType, f.front, aiCfg.geminiKey, aiCfg.geminiModel);
+                let res;
+                if (useOpenAI) {
+                  let spoken = await transcribeWithOpenAI(blob, aiCfg.openaiKey, aiCfg.openaiModel);
+                  res = scoreLiteralTranscript(spoken, f.front, evalRules);
+                } else {
+                  res = await analyzeWithGemini(reader.result, recorder.mimeType, f.front, aiCfg.geminiKey, aiCfg.geminiModel, evalRules);
+                }
                 setVoiceFeedback(res);
                 h.current.voiceAttempts.push({ word: f.front, spoken: res.spokenText, accuracy: res.accuracy, feedback: res.feedback });
                 setIsAnalyzingAI(!1);
@@ -200,14 +208,13 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     let frontTimeSec = Math.max(0.5, (flipMoment - h.current.cardStartTime) / 1000);
     let audiosPlayed = h.current.audioPlaysCount;
     let cardLimitSec = f && f.readingTime ? Number(f.readingTime) : 7;
-    let severeLimitSec = Math.max(cardLimitSec * 2, cardLimitSec + 8);
 
     h.current.total += 1;
 
     let effectiveRating = t;
 
     if (isValidSpeechResult(voiceFeedback)) {
-      let verdict = rateSpeechAndTime(voiceFeedback.accuracy, frontTimeSec, audiosPlayed, cardLimitSec);
+      let verdict = rateSpeechAndTime(voiceFeedback.accuracy, frontTimeSec, audiosPlayed, cardLimitSec, evalRules);
       effectiveRating = verdict.rating;
       if ("good" === verdict.rating) {
         h.current.correct += 1;
@@ -229,44 +236,26 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
         });
       }
     } else {
-      if ("again" === t) {
+      let verdict = rateManualAndTime(t, frontTimeSec, audiosPlayed, cardLimitSec, evalRules);
+      effectiveRating = verdict.rating;
+      if ("good" === verdict.rating) {
+        h.current.correct += 1;
+      } else if ("again" === verdict.rating) {
         h.current.wrong += 1;
         h.current.struggledList.push({
           word: f.front,
-          reason: "Não lembrou (" + Math.round(frontTimeSec) + "s" + (audiosPlayed > 0 ? ", " + audiosPlayed + "x áudio" : "") + ")",
-          timeSec: Math.round(frontTimeSec),
-          audioUsed: audiosPlayed > 0
+          reason: verdict.reason,
+          timeSec: verdict.timeSec,
+          audioUsed: verdict.audioUsed
         });
-        effectiveRating = "again";
       } else {
-        if (audiosPlayed >= 2 || frontTimeSec >= severeLimitSec) {
-          effectiveRating = "hard";
-          h.current.struggledList.push({
-            word: f.front,
-            reason: "Dificuldade alta (" + Math.round(frontTimeSec) + "s / limite " + cardLimitSec + "s" + (audiosPlayed > 0 ? ", " + audiosPlayed + "x áudio" : "") + ")",
-            timeSec: Math.round(frontTimeSec),
-            audioUsed: !0
-          });
-        } else if (audiosPlayed >= 1) {
-          effectiveRating = "hard";
-          h.current.struggledList.push({
-            word: f.front,
-            reason: "Teve dúvida (precisou ouvir o áudio)",
-            timeSec: Math.round(frontTimeSec),
-            audioUsed: !0
-          });
-        } else if (frontTimeSec > cardLimitSec) {
-          effectiveRating = "hard";
-          h.current.struggledList.push({
-            word: f.front,
-            reason: "Hesitou na leitura (" + Math.round(frontTimeSec) + "s / limite " + cardLimitSec + "s)",
-            timeSec: Math.round(frontTimeSec),
-            audioUsed: !1
-          });
-        } else {
-          effectiveRating = "good";
-          h.current.correct += 1;
-        }
+        h.current.correct += 1;
+        h.current.struggledList.push({
+          word: f.front,
+          reason: verdict.reason,
+          timeSec: verdict.timeSec,
+          audioUsed: verdict.audioUsed
+        });
       }
     }
 
@@ -405,7 +394,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
   if (isValidSpeechResult(voiceFeedback) && f) {
     let flipMoment = h.current.flipTime || Date.now();
     let frontTimeSec = Math.max(0.5, (flipMoment - h.current.cardStartTime) / 1000);
-    speechVerdict = rateSpeechAndTime(voiceFeedback.accuracy, frontTimeSec, h.current.audioPlaysCount, f.readingTime);
+    speechVerdict = rateSpeechAndTime(voiceFeedback.accuracy, frontTimeSec, h.current.audioPlaysCount, f.readingTime, evalRules);
   }
 
   return (0, u.jsxs)("div", {

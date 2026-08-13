@@ -22,52 +22,91 @@ function levenshtein(e, t) {
   return a[r][n];
 }
 
-function calculateSpeechAccuracy(e, t) {
+const DEFAULT_EVAL_RULES = {
+  voiceGoodMin: 80,
+  voiceHardMin: 50,
+  oneLetterMax: 60,
+  hintForcesHard: !0,
+  overtimeForcesHard: !0
+};
+
+function clampEvalInt(n, min, max, fallback) {
+  let v = Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
+function normalizeEvalRules(raw) {
+  let r = raw && typeof raw === "object" ? raw : {};
+  let voiceHardMin = clampEvalInt(r.voiceHardMin, 0, 99, DEFAULT_EVAL_RULES.voiceHardMin);
+  let voiceGoodMin = clampEvalInt(r.voiceGoodMin, 1, 100, DEFAULT_EVAL_RULES.voiceGoodMin);
+  if (voiceGoodMin <= voiceHardMin) voiceGoodMin = Math.min(100, voiceHardMin + 1);
+  return {
+    voiceGoodMin,
+    voiceHardMin,
+    oneLetterMax: clampEvalInt(r.oneLetterMax, 0, 100, DEFAULT_EVAL_RULES.oneLetterMax),
+    hintForcesHard: r.hintForcesHard !== !1,
+    overtimeForcesHard: r.overtimeForcesHard !== !1
+  };
+}
+
+function calculateSpeechAccuracy(e, t, rules) {
   let n = normalizeStr(e),
     r = normalizeStr(t);
   if (!n) return 0;
   if (n === r) return 100;
-  let a = n.split(/\s+/).filter(Boolean),
-    l = r.split(/\s+/).filter(Boolean);
-  if (l.length > 1) {
-    let e = 0;
-    for (let t of l) {
-      let n = 0;
-      for (let r of a) {
-        let a = levenshtein(r, t),
-          l = Math.max(r.length, t.length),
-          i = Math.max(0, Math.round((1 - a / l) * 100));
-        i > n && (n = i);
+  let acc;
+  let spokenWords = n.split(/\s+/).filter(Boolean),
+    expectedWords = r.split(/\s+/).filter(Boolean);
+  if (expectedWords.length > 1) {
+    let sum = 0;
+    for (let expected of expectedWords) {
+      let best = 0;
+      for (let spoken of spokenWords) {
+        let dist = levenshtein(spoken, expected),
+          len = Math.max(spoken.length, expected.length),
+          score = Math.max(0, Math.round((1 - dist / len) * 100));
+        if (score > best) best = score;
       }
-      e += n;
+      sum += best;
     }
-    return Math.round(e / l.length);
+    acc = Math.round(sum / expectedWords.length);
+  } else {
+    let dist = levenshtein(n, r),
+      len = Math.max(n.length, r.length);
+    acc = Math.max(0, Math.round((1 - dist / len) * 100));
   }
-  let i = levenshtein(n, r),
-    o = Math.max(n.length, r.length);
-  return Math.max(0, Math.round((1 - i / o) * 100));
+  let maxOne = normalizeEvalRules(rules).oneLetterMax;
+  if (levenshtein(n, r) === 1 && acc > maxOne) return maxOne;
+  return acc;
 }
 
 function isValidSpeechResult(fb) {
   return !!(fb && String(fb.spokenText || "").trim());
 }
 
-function rateSpeechAndTime(accuracy, frontTimeSec, audioPlaysCount, readingTimeSec) {
+function readingLimitSec(readingTimeSec) {
+  let limit = Number(readingTimeSec);
+  if (!Number.isFinite(limit) || limit <= 0) return 7;
+  return limit;
+}
+
+function rateSpeechAndTime(accuracy, frontTimeSec, audioPlaysCount, readingTimeSec, rules) {
+  let cfg = normalizeEvalRules(rules);
   let acc = Number(accuracy);
   if (!Number.isFinite(acc)) acc = 0;
   let timeSec = Math.max(0, Number(frontTimeSec) || 0);
   let plays = Math.max(0, Number(audioPlaysCount) || 0);
-  let limit = Number(readingTimeSec);
-  if (!Number.isFinite(limit) || limit <= 0) limit = 7;
+  let limit = readingLimitSec(readingTimeSec);
   let severe = Math.max(limit * 2, limit + 8);
   let roundedTime = Math.round(timeSec);
-  if (acc < 50) {
+  if (acc < cfg.voiceHardMin) {
     return { rating: "again", reason: "Voz incorreta (" + Math.round(acc) + "%)", timeSec: roundedTime, audioUsed: plays > 0 };
   }
-  if (acc < 80) {
+  if (acc < cfg.voiceGoodMin) {
     return { rating: "hard", reason: "Voz: " + Math.round(acc) + "%", timeSec: roundedTime, audioUsed: plays > 0 };
   }
-  if (plays >= 2 || timeSec >= severe) {
+  if (cfg.hintForcesHard && (plays >= 2 || timeSec >= severe)) {
     return {
       rating: "hard",
       reason: "Leu certo, mas com muita dificuldade (" + roundedTime + "s / limite " + limit + "s" + (plays > 0 ? ", " + plays + "x áudio" : "") + ")",
@@ -75,13 +114,80 @@ function rateSpeechAndTime(accuracy, frontTimeSec, audioPlaysCount, readingTimeS
       audioUsed: plays > 0
     };
   }
-  if (plays >= 1) {
+  if (cfg.hintForcesHard && plays >= 1) {
     return { rating: "hard", reason: "Leu certo, mas precisou ouvir o áudio", timeSec: roundedTime, audioUsed: !0 };
   }
-  if (timeSec > limit) {
+  if (cfg.overtimeForcesHard && timeSec > limit) {
     return { rating: "hard", reason: "Leu certo, mas hesitou (" + roundedTime + "s / limite " + limit + "s)", timeSec: roundedTime, audioUsed: !1 };
   }
   return { rating: "good", reason: "Leitura correta e no tempo", timeSec: roundedTime, audioUsed: !1 };
+}
+
+function rateManualAndTime(button, frontTimeSec, audioPlaysCount, readingTimeSec, rules) {
+  let cfg = normalizeEvalRules(rules);
+  let timeSec = Math.max(0, Number(frontTimeSec) || 0);
+  let plays = Math.max(0, Number(audioPlaysCount) || 0);
+  let limit = readingLimitSec(readingTimeSec);
+  let severe = Math.max(limit * 2, limit + 8);
+  let roundedTime = Math.round(timeSec);
+  if (button === "again") {
+    return {
+      rating: "again",
+      reason: "Não lembrou (" + roundedTime + "s" + (plays > 0 ? ", " + plays + "x áudio" : "") + ")",
+      timeSec: roundedTime,
+      audioUsed: plays > 0
+    };
+  }
+  if (cfg.hintForcesHard && (plays >= 2 || timeSec >= severe)) {
+    return {
+      rating: "hard",
+      reason: "Dificuldade alta (" + roundedTime + "s / limite " + limit + "s" + (plays > 0 ? ", " + plays + "x áudio" : "") + ")",
+      timeSec: roundedTime,
+      audioUsed: plays > 0
+    };
+  }
+  if (cfg.hintForcesHard && plays >= 1) {
+    return { rating: "hard", reason: "Teve dúvida (precisou ouvir o áudio)", timeSec: roundedTime, audioUsed: !0 };
+  }
+  if (cfg.overtimeForcesHard && timeSec > limit) {
+    return { rating: "hard", reason: "Hesitou na leitura (" + roundedTime + "s / limite " + limit + "s)", timeSec: roundedTime, audioUsed: !1 };
+  }
+  return { rating: "good", reason: "Leitura correta e no tempo", timeSec: roundedTime, audioUsed: !1 };
+}
+
+function refineGeminiEvaluation(parsed, expectedText, rules) {
+  let cfg = normalizeEvalRules(rules);
+  let spoken = String(parsed && parsed.spokenText || "").trim();
+  let acc = Number(parsed && (parsed.accuracyScore ?? parsed.accuracy));
+  if (!Number.isFinite(acc)) acc = 0;
+  if (spoken) {
+    let local = calculateSpeechAccuracy(spoken, expectedText, cfg);
+    acc = Math.min(acc, local);
+  }
+  acc = Math.max(0, Math.min(100, Math.round(acc)));
+  let quality = acc >= cfg.voiceGoodMin ? "excelente" : acc >= cfg.voiceHardMin ? "quase_la" : "precisa_praticar";
+  return {
+    spokenText: spoken,
+    accuracy: acc,
+    feedback: (parsed && parsed.feedback) || feedbackFromAccuracy(acc),
+    quality: parsed && parsed.quality ? parsed.quality : quality,
+    isAI: !0
+  };
+}
+
+function buildGeminiEvalPrompt(expectedText, rules) {
+  let cfg = normalizeEvalRules(rules);
+  return [
+    "Você é um avaliador pedagógico de leitura infantil em português do Brasil.",
+    'A palavra ou frase escrita na tela é: "' + expectedText + '".',
+    "Analise SOMENTE o áudio. Regras obrigatórias:",
+    "1. Transcreva exatamente o que a criança falou. Não complete, não corrija e não substitua pela palavra esperada.",
+    "2. Se ela trocar, omitir ou acrescentar 1 letra (ex.: BOLA vs BOTA), accuracyScore no máximo " + cfg.oneLetterMax + ".",
+    "3. Se a fala for outra palavra, accuracyScore abaixo de " + cfg.voiceHardMin + ".",
+    "4. Só use " + cfg.voiceGoodMin + " ou mais se a fala for a palavra esperada, sem troca de letra.",
+    "5. Não invente que ela falou a palavra da tela se o áudio for outro som.",
+    'Responda APENAS um JSON: {"spokenText":"texto falado","accuracyScore":0,"feedback":"comentário curto e amigável","quality":"excelente" ou "quase_la" ou "precisa_praticar"}'
+  ].join(" ");
 }
 
 const EDGE_TTS_VOICES = [
@@ -525,22 +631,29 @@ function hasParentPin(cfg) {
 
 function persistableAISettings(cfg) {
   let copy = Object.assign({}, cfg || {});
-  if (copy.pinHash && (copy.geminiKeyEnc || copy.geminiKey)) {
-    copy.geminiKey = "";
+  if (copy.pinHash) {
+    if (copy.geminiKeyEnc || copy.geminiKey) copy.geminiKey = "";
+    if (copy.openaiKeyEnc || copy.openaiKey) copy.openaiKey = "";
   }
   return copy;
+}
+
+async function sealField(next, pin, salt, plain, field, encField, ivField) {
+  next[field] = plain || "";
+  if (pin && salt && plain) {
+    let sealed = await encryptSecret(plain, pin, salt);
+    next[encField] = sealed.enc;
+    next[ivField] = sealed.iv;
+  }
+  return next;
 }
 
 async function createParentPin(pin, cfg) {
   let salt = bufToB64(randomBytes(16).buffer);
   let pinHash = await hashPin(pin, salt);
   let next = Object.assign({}, cfg || {}, { pinSalt: salt, pinHash });
-  if (cfg && cfg.geminiKey) {
-    let sealed = await encryptSecret(cfg.geminiKey, pin, salt);
-    next.geminiKeyEnc = sealed.enc;
-    next.geminiKeyIv = sealed.iv;
-    next.geminiKey = cfg.geminiKey;
-  }
+  if (cfg && cfg.geminiKey) await sealField(next, pin, salt, cfg.geminiKey, "geminiKey", "geminiKeyEnc", "geminiKeyIv");
+  if (cfg && cfg.openaiKey) await sealField(next, pin, salt, cfg.openaiKey, "openaiKey", "openaiKeyEnc", "openaiKeyIv");
   setUnlockedPin(pin);
   return next;
 }
@@ -562,6 +675,13 @@ async function unlockParentSettings(pin, cfg) {
       next.geminiKey = "";
     }
   }
+  if (cfg.openaiKeyEnc && cfg.openaiKeyIv) {
+    try {
+      next.openaiKey = await decryptSecret(cfg.openaiKeyEnc, cfg.openaiKeyIv, pin, cfg.pinSalt);
+    } catch (e) {
+      next.openaiKey = "";
+    }
+  }
   return next;
 }
 
@@ -576,6 +696,17 @@ async function sealGeminiKey(cfg, plainKey) {
   return next;
 }
 
+async function sealOpenaiKey(cfg, plainKey) {
+  let pin = getUnlockedPin();
+  let next = Object.assign({}, cfg, { openaiKey: plainKey || "" });
+  if (pin && cfg && cfg.pinSalt) {
+    let sealed = await encryptSecret(plainKey || "", pin, cfg.pinSalt);
+    next.openaiKeyEnc = sealed.enc;
+    next.openaiKeyIv = sealed.iv;
+  }
+  return next;
+}
+
 function resetParentPin(cfg) {
   setUnlockedPin("");
   let next = Object.assign({}, cfg || {});
@@ -583,7 +714,10 @@ function resetParentPin(cfg) {
   delete next.pinSalt;
   delete next.geminiKeyEnc;
   delete next.geminiKeyIv;
+  delete next.openaiKeyEnc;
+  delete next.openaiKeyIv;
   next.geminiKey = "";
+  next.openaiKey = "";
   return next;
 }
 
@@ -652,10 +786,11 @@ async function shareBackupFile(jsonText, filename) {
   return "downloaded";
 }
 
-async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, modelName) {
+async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, modelName, rules) {
   let model = (modelName || "gemini-2.0-flash").trim();
   let cleanBase64 = audioDataUrl.includes(",") ? audioDataUrl.split(",")[1] : audioDataUrl;
-  let prompt = 'Você é um avaliador pedagógico de leitura infantil em português. A palavra ou frase esperada escrita na tela é: "' + expectedText + '". Analise o áudio da criança e responda APENAS um JSON no formato: {"spokenText": "texto falado", "accuracyScore": número de 0 a 100, "feedback": "comentário pedagógico curto e amigável", "quality": "excelente" ou "quase_la" ou "precisa_praticar"}';
+  let evalRules = normalizeEvalRules(rules);
+  let prompt = buildGeminiEvalPrompt(expectedText, evalRules);
   
   let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
     method: "POST",
@@ -679,12 +814,41 @@ async function analyzeWithGemini(audioDataUrl, mimeType, expectedText, apiKey, m
   let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
   let cleanJson = text.replaceAll("```json", "").replaceAll("```", "").trim();
   let parsed = JSON.parse(cleanJson);
+  return refineGeminiEvaluation(parsed, expectedText, evalRules);
+}
+
+function scoreLiteralTranscript(spoken, expected, rules) {
+  let acc = calculateSpeechAccuracy(spoken, expected, rules);
   return {
-    spokenText: parsed.spokenText || "",
-    accuracy: Number(parsed.accuracyScore) || 0,
-    feedback: parsed.feedback || "",
-    quality: parsed.quality || (parsed.accuracyScore >= 80 ? "excelente" : parsed.accuracyScore >= 50 ? "quase_la" : "precisa_praticar"),
+    spokenText: String(spoken || "").trim(),
+    accuracy: acc,
+    feedback: feedbackFromAccuracy(acc),
+    quality: speechQuality(acc),
     isAI: !0
   };
+}
+
+async function transcribeWithOpenAI(audioBlob, apiKey, modelName) {
+  let model = (modelName || "gpt-4o-transcribe").trim();
+  let mime = (audioBlob && audioBlob.type) || "audio/webm";
+  let ext = mime.indexOf("mp4") >= 0 ? "mp4" : mime.indexOf("mpeg") >= 0 ? "mp3" : mime.indexOf("wav") >= 0 ? "wav" : "webm";
+  let file = new File([audioBlob], "leitura." + ext, { type: mime });
+  let form = new FormData();
+  form.append("file", file);
+  form.append("model", model);
+  form.append("language", "pt");
+  form.append("temperature", "0");
+  form.append("response_format", "json");
+  let response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: form
+  });
+  if (!response.ok) {
+    let errText = await response.text().catch(() => "");
+    throw new Error("Erro na API OpenAI (" + response.status + "): " + errText);
+  }
+  let data = await response.json();
+  return String(data.text || "").trim();
 }
 
