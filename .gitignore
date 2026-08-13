@@ -4,6 +4,7 @@ node_modules/
 *.log
 .idea/
 .vscode/
+.worktrees/
 
 # Build artifacts (generated from src/)
 leaki.html
