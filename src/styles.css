@@ -29,6 +29,11 @@
 .sheet-head,.admin-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-shrink:0;padding:.75rem 1rem;border-bottom:1px solid #2c2e34;background:#1a1b1f}
 .sheet-head h3,.admin-head h3{font-family:Space Grotesk,sans-serif;font-weight:600;font-size:1rem;color:#fff;min-width:0}
 .sheet-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:1.25rem}
+.admin-shell{display:flex;flex-direction:column;flex:1;min-height:0}
+.learner-bar{display:flex;flex-wrap:wrap;gap:.4rem;padding:.5rem .75rem;border-bottom:1px solid #2c2e34;flex-shrink:0}
+.learner-chip{border:1px solid #2c2e34;background:#212227;color:#9a9ba5;border-radius:999px;padding:.35rem .75rem;font-size:.75rem;min-height:2.25rem;font-family:IBM Plex Sans,sans-serif}
+.learner-chip:hover,.learner-chip:focus-visible{color:#fff;outline:2px solid #6e56cf;outline-offset:2px}
+.learner-chip.is-active{background:#6e56cf29;color:#fff;border-color:#6e56cf66}
 .admin-layout{display:flex;flex-direction:column;flex:1;min-height:0}
 .admin-nav{display:flex;flex-direction:row;gap:.25rem;padding:.5rem;overflow-x:auto;flex-shrink:0;border-bottom:1px solid #2c2e34;-webkit-overflow-scrolling:touch}
 .admin-nav-btn{flex-shrink:0;border:1px solid transparent;background:transparent;color:#9a9ba5;font-family:IBM Plex Sans,sans-serif;font-size:.75rem;font-weight:500;border-radius:.75rem;padding:.5rem .75rem;min-height:2.5rem}

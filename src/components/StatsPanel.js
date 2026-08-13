@@ -1,5 +1,6 @@
-function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n, syncCfg, onSaveSync, onSyncNow, syncBusy }) {
+function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n, syncCfg, onSaveSync, onSyncNow, syncBusy, learners, activeLearnerId, learnerReports, onSwitchLearner, onAddLearner, onRenameLearner }) {
   let [activeTab, setActiveTab] = (0, c.useState)("stats"),
+    [reportScope, setReportScope] = (0, c.useState)("active"),
     [geminiKey, setGeminiKey] = (0, c.useState)(aiCfg?.geminiKey || ""),
     [geminiModel, setGeminiModel] = (0, c.useState)(aiCfg?.geminiModel || "gemini-2.0-flash"),
     [openaiKey, setOpenaiKey] = (0, c.useState)(aiCfg?.openaiKey || ""),
@@ -9,12 +10,15 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
     [voices, setVoices] = (0, c.useState)([]),
     [selectedVoice, setSelectedVoice] = (0, c.useState)(""),
     [ttsTestState, setTtsTestState] = (0, c.useState)(""),
-    [evalRules, setEvalRules] = (0, c.useState)(() => normalizeEvalRules(aiCfg?.evalRules)),
-    r = e.reduce((e, t) => e + (t.durationSeconds || 0), 0),
-    a = e.reduce((e, t) => e + (t.totalReviews || 0), 0),
-    l = e.reduce((e, t) => e + (t.correctCount || 0), 0),
+    [evalRules, setEvalRules] = (0, c.useState)(() => normalizeEvalRules(aiCfg?.evalRules));
+  let view = selectReportView(reportScope, { history: e, cards: cardsList, decks: decksList }, learnerReports || []);
+  let sessions = view.history || [];
+  let r = sessions.reduce((acc, row) => acc + (row.durationSeconds || 0), 0),
+    a = sessions.reduce((acc, row) => acc + (row.totalReviews || 0), 0),
+    l = sessions.reduce((acc, row) => acc + (row.correctCount || 0), 0),
     i = a > 0 ? Math.round((l / a) * 100) : 0,
-    digest = buildParentDigest(e, cardsList || []);
+    digest = buildParentDigest(sessions, view.cards || []);
+  let learnerList = learners || [];
 
   (0, c.useEffect)(() => {
     function loadVoices() {
@@ -55,12 +59,7 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
       openaiKey: openaiToSave,
       openaiModel: openaiModel.trim() || "gpt-4o-transcribe",
       ttsVoice: selectedVoice,
-      evalRules: normalizeEvalRules(evalRules),
-      learnerInterests: aiCfg?.learnerInterests || "",
-      learnerDifficulties: aiCfg?.learnerDifficulties || "",
-      suggestSystemPrompt: aiCfg?.suggestSystemPrompt || "",
-      suggestSkills: aiCfg?.suggestSkills || [],
-      contentInbox: aiCfg?.contentInbox || []
+      evalRules: normalizeEvalRules(evalRules)
     };
     if (onSaveAI) onSaveAI(newCfg);
     setSavedMsg("Configurações salvas com sucesso!");
@@ -75,8 +74,35 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
   ];
 
   return (0, u.jsxs)("div", {
-    className: "admin-layout text-sm",
+    className: "admin-shell text-sm",
     children: [
+      (0, u.jsxs)("div", {
+        className: "learner-bar",
+        role: "tablist",
+        "aria-label": "Crianças",
+        children: [
+          learnerList.map(item => (0, u.jsx)("button", {
+            type: "button",
+            role: "tab",
+            "aria-selected": item.id === activeLearnerId,
+            onClick: () => onSwitchLearner && onSwitchLearner(item.id),
+            className: "learner-chip" + (item.id === activeLearnerId ? " is-active" : ""),
+            children: item.name
+          }, item.id)),
+          (0, u.jsx)("button", {
+            type: "button",
+            onClick: () => {
+              let name = typeof prompt === "function" ? prompt("Nome da criança", nextLearnerName(learnerList)) : "";
+              if (name && onAddLearner) onAddLearner(name);
+            },
+            className: "learner-chip",
+            children: "+ Nova criança"
+          })
+        ]
+      }),
+      (0, u.jsxs)("div", {
+        className: "admin-layout",
+        children: [
       (0, u.jsx)("div", {
         className: "admin-nav",
         role: "tablist",
@@ -101,6 +127,23 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
         if ("stats" === activeTab) return (0, u.jsxs)("div", {
         className: "space-y-4",
         children: [
+          learnerList.length > 1 ? (0, u.jsxs)("div", {
+            className: "flex flex-wrap gap-2",
+            children: [
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => setReportScope("active"),
+                className: "learner-chip" + (reportScope === "active" ? " is-active" : ""),
+                children: "Esta criança"
+              }),
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => setReportScope("all"),
+                className: "learner-chip" + (reportScope === "all" ? " is-active" : ""),
+                children: "Todas as crianças"
+              })
+            ]
+          }) : null,
           (0, u.jsxs)("div", {
             className: "admin-stats-top",
             children: [
@@ -140,7 +183,7 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
                 className: "p-3 rounded-xl bg-base-raised border border-base-line text-center",
                 children: [
                   (0, u.jsx)("p", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Sessões" }),
-                  (0, u.jsx)("p", { className: "font-display font-semibold text-lg text-violet-light mt-0.5", children: e.length })
+                  (0, u.jsx)("p", { className: "font-display font-semibold text-lg text-violet-light mt-0.5", children: sessions.length })
                 ]
               })
             ]
@@ -154,20 +197,20 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
                 className: "flex items-center justify-between",
                 children: [
                   (0, u.jsx)("h4", { className: "font-display font-medium text-white flex items-center gap-1.5", children: [(0, u.jsx)("span", { children: "📋" }), " Histórico de Estudos"] }),
-                  e.length > 0 ? (0, u.jsx)("button", {
+                  sessions.length > 0 && reportScope !== "all" ? (0, u.jsx)("button", {
                     type: "button",
-                    onClick: () => { if (confirm("Deseja zerar todo o histórico de estudos?")) t(); },
+                    onClick: () => { if (confirm("Zerar o histórico desta criança?")) t(); },
                     className: "font-mono text-[10px] text-ink-soft hover:text-coral transition-colors",
                     children: "limpar histórico"
                   }) : null
                 ]
               }),
-              0 === e.length ? (0, u.jsx)("p", {
+              0 === sessions.length ? (0, u.jsx)("p", {
                 className: "text-xs text-ink-soft py-4 text-center font-mono",
                 children: "Nenhuma sessão realizada ainda. As estatísticas aparecerão aqui após cada estudo."
               }) : (0, u.jsx)("div", {
                 className: "admin-session-list",
-                children: e.slice().reverse().map((e, t) => {
+                children: sessions.slice().reverse().map((e, t) => {
                   let a = e.avgTimePerCard && e.avgTimePerCard < 3,
                     hesCount = e.struggledCards ? e.struggledCards.length : 0,
                     voiceCount = e.voiceAttempts ? e.voiceAttempts.length : 0;
@@ -248,7 +291,12 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
         syncCfg: syncCfg,
         onSaveSync: onSaveSync,
         onSyncNow: onSyncNow,
-        busy: syncBusy
+        busy: syncBusy,
+        learners: learnerList,
+        activeLearnerId: activeLearnerId,
+        onSwitchLearner: onSwitchLearner,
+        onAddLearner: onAddLearner,
+        onRenameLearner: onRenameLearner
       });
         if ("suggest" === activeTab) return (0, u.jsx)(eContentSuggest, {
         history: e,
@@ -516,6 +564,8 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
         ]
       });
       })()
+      })
+        ]
       })
     ]
   });

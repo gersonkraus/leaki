@@ -148,6 +148,10 @@ assert.match(panel, /suggestSystemPrompt|Prompt do sistema/);
 assert.match(panel, /\{\{logs\}\}/);
 assert.match(panel, /Adicionar skill/);
 assert.match(panel, /Liberar todas/);
+assert.match(panel, /suggestProfileAt/);
+assert.match(panel, /persistProfile/);
+assert.match(panel, /A guardar/);
+assert.doesNotMatch(readFileSync("src/components/StatsPanel.js", "utf8"), /suggestSystemPrompt: aiCfg/);
 assert.deepEqual(
   collapseDuplicateCards([
     { id: "1", deckId: "d1", front: "NAVE", reps: 0 },
@@ -160,6 +164,38 @@ assert.equal(pruneContentInbox([
   { id: "a", status: "pending", front: "NAVE" },
   { id: "b", status: "pending", front: "nave" },
 ]).length, 1);
+
+const discardedWins = pruneContentInbox([
+  { id: "sug-1", status: "discarded", front: "CASA" },
+  { id: "sug-1", status: "pending", front: "CASA" },
+]);
+assert.equal(discardedWins.length, 1, "mesmo id: discarded deve vencer pending");
+assert.equal(discardedWins[0].status, "discarded");
+
+const discardedWinsByFront = pruneContentInbox([
+  { id: "local-x", status: "discarded", front: "BOLA" },
+  { id: "remote-y", status: "pending", front: "bola" },
+]);
+assert.equal(discardedWinsByFront.length, 1, "mesmo texto: discarded deve esconder o pending remoto");
+assert.equal(discardedWinsByFront[0].status, "discarded");
+
+const insertedWins = pruneContentInbox([
+  { id: "sug-2", status: "discarded", front: "PATO" },
+  { id: "sug-2", status: "inserted", front: "PATO" },
+]);
+assert.equal(insertedWins[0].status, "inserted");
+
+const newAskBlocked = pruneContentInbox([
+  { id: "old", status: "discarded", front: "GATO" },
+  { id: "fresh", status: "pending", front: "GATO" },
+]);
+assert.equal(newAskBlocked.filter((i) => i.status === "pending").length, 0);
+
+const manyPending = [];
+for (let i = 0; i < 45; i++) manyPending.push({ id: "p" + i, status: "pending", front: "PEND-" + i });
+manyPending.push({ id: "d1", status: "discarded", front: "FICA-FORA" });
+const keptDiscard = pruneContentInbox(manyPending);
+assert.ok(keptDiscard.some((i) => i.status === "discarded" && i.front === "FICA-FORA"), "muitos pending não podem apagar um descarte");
 assert.doesNotMatch(panel, /onApproveCards\(\s*result/);
 assert.match(readFileSync("src/app.js", "utf8"), /buildNewCard/);
 assert.match(src, /x-goog-api-key/);

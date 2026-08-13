@@ -20,6 +20,8 @@
     "test:parent": "node scripts/test-parent-digest.mjs",
     "test:suggest": "node scripts/test-content-suggest.mjs",
     "test:sync": "node scripts/test-sync.mjs",
+    "test:learners": "node scripts/test-learners.mjs",
+    "test": "node scripts/test-ui-cards.mjs && node scripts/test-study-rate.mjs && node scripts/test-parent-digest.mjs && node scripts/test-content-suggest.mjs && node scripts/test-sync.mjs && node scripts/test-learners.mjs",
     "build:apk": "npm run sync && cd android && ./gradlew assembleDebug",
     "build:release": "npm run sync && cd android && ./gradlew assembleRelease"
   },

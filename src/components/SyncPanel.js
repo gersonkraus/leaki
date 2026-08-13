@@ -1,9 +1,15 @@
-function eSyncPanel({ syncCfg, onSaveSync, onSyncNow, busy }) {
+function eSyncPanel({ syncCfg, onSaveSync, onSyncNow, busy, learners, activeLearnerId, onSwitchLearner, onAddLearner, onRenameLearner }) {
   let cfg = syncCfg || defaultSyncConfig();
   let [keyDraft, setKeyDraft] = (0, c.useState)(cfg.pairKey || "");
   let [urlDraft, setUrlDraft] = (0, c.useState)(cfg.syncUrl || DEFAULT_SYNC_HOST);
   let [copied, setCopied] = (0, c.useState)(!1);
   let valid = isValidPairKey(keyDraft);
+  let list = learners || [];
+
+  (0, c.useEffect)(() => {
+    setKeyDraft(cfg.pairKey || "");
+    setUrlDraft(cfg.syncUrl || DEFAULT_SYNC_HOST);
+  }, [cfg.pairKey, cfg.syncUrl, activeLearnerId]);
 
   function save(partial) {
     if (onSaveSync) onSaveSync(Object.assign({}, cfg, { pairKey: normalizePairKey(keyDraft), syncUrl: urlDraft.trim() || DEFAULT_SYNC_HOST }, partial));
@@ -25,8 +31,49 @@ function eSyncPanel({ syncCfg, onSaveSync, onSyncNow, busy }) {
         children: [
           (0, u.jsxs)("div", {
             children: [
-              (0, u.jsx)("h4", { className: "font-display font-medium text-white", children: "Parear celular e site" }),
-              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "A criança estuda no APK mesmo com o computador desligado. Quando houver rede, este aparelho troca baralhos, fichas e histórico com https://leaki.gerson.com." })
+              (0, u.jsx)("h4", { className: "font-display font-medium text-white", children: "Crianças neste site" }),
+              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Cada criança tem chave e conteúdo próprios. O celular dela usa só a chave dela." })
+            ]
+          }),
+          list.map(item => (0, u.jsxs)("div", {
+            className: "flex flex-wrap items-center gap-2 p-2 rounded-xl bg-base-raised/70 border border-base-line",
+            children: [
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => onSwitchLearner && onSwitchLearner(item.id),
+                className: "learner-chip" + (item.id === activeLearnerId ? " is-active" : ""),
+                children: item.id === activeLearnerId ? "ativa" : "abrir"
+              }),
+              (0, u.jsx)("input", {
+                defaultValue: item.name,
+                key: item.id + ":" + item.name,
+                onBlur: ev => onRenameLearner && onRenameLearner(item.id, ev.target.value),
+                className: "flex-1 min-w-[8rem] bg-base-surface border border-base-line rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-violet"
+              }),
+              (0, u.jsx)("span", {
+                className: "font-mono text-[10px] text-ink-soft truncate max-w-[10rem]",
+                children: item.pairKey || "sem chave"
+              })
+            ]
+          }, item.id)),
+          (0, u.jsx)("button", {
+            type: "button",
+            onClick: () => {
+              let name = typeof prompt === "function" ? prompt("Nome da criança", nextLearnerName(list)) : "";
+              if (name && onAddLearner) onAddLearner(name);
+            },
+            className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-base-raised text-white",
+            children: "Nova criança"
+          })
+        ]
+      }),
+      (0, u.jsxs)("div", {
+        className: "p-4 rounded-xl bg-base-surface border border-base-line space-y-3",
+        children: [
+          (0, u.jsxs)("div", {
+            children: [
+              (0, u.jsx)("h4", { className: "font-display font-medium text-white", children: "Parear celular desta criança" }),
+              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Cole esta chave só no celular dela. Outra criança = outra chave. O site troca dados com https://leaki.gerson.com." })
             ]
           }),
           (0, u.jsxs)("label", {

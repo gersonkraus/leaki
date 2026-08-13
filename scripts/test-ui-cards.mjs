@@ -23,6 +23,8 @@ assert.match(build, /width=device-width/);
 assert.match(build, /viewport-fit=cover/);
 assert.match(readFileSync("src/app.js", "utf8"), /wide: !0/);
 assert.match(readFileSync("src/components/StatsPanel.js", "utf8"), /admin-layout/);
+assert.match(css, /\.learner-bar\{/);
+assert.match(readFileSync("src/components/StatsPanel.js", "utf8"), /Todas as crianças/);
 assert.match(readFileSync("src/components/Modal.js", "utf8"), /aria-modal/);
 
 console.log("ui-cards tests passed");

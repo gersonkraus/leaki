@@ -28,22 +28,40 @@ document.head.appendChild(eg);
         [aiSettings, setAISettings] = (0, c.useState)({ provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" }),
         [syncCfg, setSyncCfg] = (0, c.useState)(defaultSyncConfig),
         [syncBusy, setSyncBusy] = (0, c.useState)(!1),
+        [learnersState, setLearnersState] = (0, c.useState)({ version: 1, activeId: "", learners: [] }),
+        [learnerBundles, setLearnerBundles] = (0, c.useState)({}),
         g = (0, c.useRef)([]);
       let syncCfgRef = (0, c.useRef)(syncCfg);
       let dataRef = (0, c.useRef)({ decks: e, cards: n, history, aiSettings });
       let syncingRef = (0, c.useRef)(!1);
       let skipPushRef = (0, c.useRef)(!0);
+      let activeLearnerRef = (0, c.useRef)("");
+      let learnerBundlesRef = (0, c.useRef)({});
       syncCfgRef.current = syncCfg;
       dataRef.current = { decks: e, cards: n, history, aiSettings };
+      learnerBundlesRef.current = learnerBundles;
 
       (0, c.useEffect)(() => {
         (async () => {
           let defaults = { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" };
-          let [e, n, h, ai, syncSaved] = await Promise.all([ee(en, []), ee(er, []), ee(ehistory, []), ee(eaisettings, defaults), ee(esync, defaultSyncConfig())]);
+          let [e, n, h, ai, syncSaved, savedLearners] = await Promise.all([ee(en, []), ee(er, []), ee(ehistory, []), ee(eaisettings, defaults), ee(esync, defaultSyncConfig()), ee(LEARNERS_KEY, null)]);
           let cfg = ai || defaults;
+          let nextLearners = migrateLearnersState(savedLearners, syncSaved);
+          let bundles = {};
+          for (let i = 0; i < nextLearners.learners.length; i++) {
+            let item = nextLearners.learners[i];
+            if (item.id === nextLearners.activeId) {
+              bundles[item.id] = snapshotLearnerBundle({ decks: e, cards: n, history: h, aiSettings: cfg, sync: Object.assign({}, defaultSyncConfig(), syncSaved || {}) });
+            } else {
+              bundles[item.id] = snapshotLearnerBundle(await ee(learnerDataKey(item.id), emptyLearnerBundle()));
+            }
+          }
           setTTSVoice(cfg.ttsVoice || "");
           t(e), r(n), setHistory(h), setAISettings(cfg);
           if (syncSaved) setSyncCfg(Object.assign({}, defaultSyncConfig(), syncSaved));
+          activeLearnerRef.current = nextLearners.activeId;
+          setLearnersState(nextLearners);
+          setLearnerBundles(bundles);
           l(!0);
         })();
       }, []);
@@ -66,6 +84,27 @@ document.head.appendChild(eg);
 
       (0, c.useEffect)(() => {
         a && et(esync, syncCfg);
+      }, [syncCfg, a]);
+
+      (0, c.useEffect)(() => {
+        if (!a || !learnersState.activeId) return;
+        et(LEARNERS_KEY, learnersState);
+      }, [learnersState, a]);
+
+      (0, c.useEffect)(() => {
+        if (!a || !activeLearnerRef.current) return;
+        let bundle = snapshotLearnerBundle({ decks: e, cards: n, history, aiSettings, sync: syncCfg });
+        let id = activeLearnerRef.current;
+        setLearnerBundles(prev => Object.assign({}, prev, { [id]: bundle }));
+        et(learnerDataKey(id), Object.assign({}, bundle, { aiSettings: persistableAISettings(bundle.aiSettings) }));
+      }, [e, n, history, aiSettings, syncCfg, a]);
+
+      (0, c.useEffect)(() => {
+        if (!a || !learnersState.activeId) return;
+        setLearnersState(prev => {
+          let next = syncLearnerMeta(prev, prev.activeId, syncCfg);
+          return JSON.stringify(next.learners) === JSON.stringify(prev.learners) ? prev : next;
+        });
       }, [syncCfg, a]);
 
       async function runSync(reason) {
@@ -139,7 +178,14 @@ document.head.appendChild(eg);
         return () => clearTimeout(boot);
       }, [a, syncCfg.enabled, syncCfg.pairKey]);
 
-      let aiSyncStamp = (aiSettings.learnerInterests || "") + "|" + (aiSettings.learnerDifficulties || "") + "|" + ((aiSettings.contentInbox || []).map(item => item.id + ":" + item.status).join(","));
+      let aiSyncStamp = [
+        aiSettings.learnerInterests || "",
+        aiSettings.learnerDifficulties || "",
+        aiSettings.suggestSystemPrompt || "",
+        ((aiSettings.suggestSkills || []).map(sk => (sk && sk.id) || "").join(",")),
+        aiSettings.suggestProfileAt || "",
+        ((aiSettings.contentInbox || []).map(item => item.id + ":" + item.status).join(","))
+      ].join("|");
 
       (0, c.useEffect)(() => {
         if (!a || skipPushRef.current || !syncCfg.enabled) return;
@@ -158,6 +204,73 @@ document.head.appendChild(eg);
         window.addEventListener("online", onOnline);
         return () => window.removeEventListener("online", onOnline);
       }, []);
+
+      function currentLearnerBundle() {
+        let d = dataRef.current;
+        return {
+          decks: d.decks,
+          cards: d.cards,
+          history: d.history,
+          aiSettings: d.aiSettings,
+          sync: syncCfgRef.current
+        };
+      }
+
+      function applyLearnerBundle(bundle) {
+        let next = snapshotLearnerBundle(bundle);
+        t(next.decks);
+        r(next.cards);
+        setHistory(next.history);
+        setAISettings(next.aiSettings || { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" });
+        setSyncCfg(Object.assign({}, defaultSyncConfig(), next.sync || {}));
+        if (next.aiSettings && next.aiSettings.ttsVoice != null) setTTSVoice(next.aiSettings.ttsVoice || "");
+      }
+
+      function handleSwitchLearner(nextId) {
+        if (!nextId || nextId === activeLearnerRef.current) return;
+        skipPushRef.current = !0;
+        let fromId = activeLearnerRef.current;
+        let switched = applyLearnerSwitch(learnerBundlesRef.current, fromId, currentLearnerBundle(), nextId);
+        activeLearnerRef.current = nextId;
+        setLearnerBundles(switched.bundles);
+        if (fromId) et(learnerDataKey(fromId), Object.assign({}, switched.bundles[fromId], { aiSettings: persistableAISettings(switched.bundles[fromId].aiSettings) }));
+        et(learnerDataKey(nextId), Object.assign({}, switched.bundle, { aiSettings: persistableAISettings(switched.bundle.aiSettings) }));
+        applyLearnerBundle(switched.bundle);
+        setLearnersState(prev => Object.assign({}, prev, { activeId: nextId }));
+        setTimeout(() => {
+          skipPushRef.current = !1;
+          runSync("switch");
+        }, 500);
+      }
+
+      function handleAddLearner(name) {
+        skipPushRef.current = !0;
+        let fromId = activeLearnerRef.current;
+        let current = currentLearnerBundle();
+        let added = addLearnerToState(learnersState, { name });
+        let fresh = makeNewLearnerBundle(current.aiSettings, {
+          pairKey: added.learner.pairKey,
+          syncUrl: added.learner.syncUrl,
+          enabled: !0
+        });
+        let baseBundles = Object.assign({}, learnerBundlesRef.current);
+        if (fromId) baseBundles[fromId] = snapshotLearnerBundle(current);
+        baseBundles[added.learner.id] = fresh;
+        activeLearnerRef.current = added.learner.id;
+        setLearnerBundles(baseBundles);
+        if (fromId) et(learnerDataKey(fromId), Object.assign({}, baseBundles[fromId], { aiSettings: persistableAISettings(baseBundles[fromId].aiSettings) }));
+        et(learnerDataKey(added.learner.id), Object.assign({}, fresh, { aiSettings: persistableAISettings(fresh.aiSettings) }));
+        applyLearnerBundle(fresh);
+        setLearnersState({ version: 1, activeId: added.learner.id, learners: added.state.learners });
+        setTimeout(() => {
+          skipPushRef.current = !1;
+          runSync("switch");
+        }, 500);
+      }
+
+      function handleRenameLearner(id, name) {
+        setLearnersState(prev => renameLearnerInState(prev, id, name));
+      }
 
       function handleSaveSessionStats(record) {
         setHistory(prev => [...prev, record]);
@@ -193,14 +306,16 @@ document.head.appendChild(eg);
       }
 
       async function handleSaveAISettings(newCfg) {
-        let merged = Object.assign({}, aiSettings, newCfg);
+        let merged = Object.assign({}, dataRef.current.aiSettings, newCfg);
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "geminiKey") && !newCfg.geminiKeyEnc) {
           merged = await sealGeminiKey(merged, newCfg.geminiKey);
         }
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "openaiKey") && !newCfg.openaiKeyEnc) {
           merged = await sealOpenaiKey(merged, newCfg.openaiKey);
         }
+        dataRef.current = Object.assign({}, dataRef.current, { aiSettings: merged });
         setAISettings(merged);
+        et(eaisettings, persistableAISettings(merged));
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "ttsVoice")) setTTSVoice(newCfg.ttsVoice || "");
       }
 
@@ -393,6 +508,7 @@ document.head.appendChild(eg);
             wide: !0,
             onClose: () => setKStats(!1),
             children: (0, u.jsx)(eParentStats, {
+              key: learnersState.activeId || "learner",
               history: history,
               cards: n,
               decks: e,
@@ -404,7 +520,24 @@ document.head.appendChild(eg);
               syncCfg: syncCfg,
               onSaveSync: next => setSyncCfg(prev => Object.assign({}, prev, next)),
               onSyncNow: () => runSync("manual"),
-              syncBusy: syncBusy
+              syncBusy: syncBusy,
+              learners: learnersState.learners,
+              activeLearnerId: learnersState.activeId,
+              learnerReports: (learnersState.learners || []).map(item => {
+                let bundle = item.id === learnersState.activeId
+                  ? { decks: e, cards: n, history }
+                  : (learnerBundles[item.id] || emptyLearnerBundle());
+                return {
+                  id: item.id,
+                  name: item.name,
+                  history: bundle.history || [],
+                  cards: bundle.cards || [],
+                  decks: bundle.decks || []
+                };
+              }),
+              onSwitchLearner: handleSwitchLearner,
+              onAddLearner: handleAddLearner,
+              onRenameLearner: handleRenameLearner
             })
           })
         ]

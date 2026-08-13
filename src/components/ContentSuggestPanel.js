@@ -11,7 +11,10 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
   let [msg, setMsg] = (0, c.useState)(null);
   let [err, setErr] = (0, c.useState)(null);
   let [quickDeckId, setQuickDeckId] = (0, c.useState)((decks && decks[0] && decks[0].id) || "");
+  let [saveState, setSaveState] = (0, c.useState)("idle");
   let releasingRef = (0, c.useRef)(new Set());
+  let skipProfileSaveRef = (0, c.useRef)(!0);
+  let inboxTimerRef = (0, c.useRef)(null);
   let evidence = (0, c.useMemo)(
     () => buildLearnerEvidence(history, cards, decks, { interests, difficulties }),
     [history, cards, decks, interests, difficulties]
@@ -22,22 +25,45 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
   function persistInbox(next) {
     let pruned = pruneContentInbox(next);
     setInbox(pruned);
-    if (onSaveAI) onSaveAI({ contentInbox: pruned });
+    if (onSaveAI) return onSaveAI({ contentInbox: pruned });
+  }
+
+  function profilePayload() {
+    return {
+      learnerInterests: interests.trim(),
+      learnerDifficulties: difficulties.trim(),
+      suggestSystemPrompt: systemPrompt,
+      suggestSkills: skills,
+      suggestProfileAt: new Date().toISOString()
+    };
+  }
+
+  function persistProfile() {
+    if (!onSaveAI) return;
+    setSaveState("saving");
+    onSaveAI(profilePayload());
+    setSaveState("saved");
+    setMsg("Perfil salvo.");
+    setErr(null);
+    setTimeout(() => {
+      setMsg(null);
+      setSaveState(s => s === "saved" ? "idle" : s);
+    }, 2000);
   }
 
   function handleSaveProfile() {
-    if (onSaveAI) {
-      onSaveAI({
-        learnerInterests: interests.trim(),
-        learnerDifficulties: difficulties.trim(),
-        suggestSystemPrompt: systemPrompt,
-        suggestSkills: skills
-      });
-    }
-    setMsg("Perfil do aluno salvo.");
-    setErr(null);
-    setTimeout(() => setMsg(null), 2500);
+    persistProfile();
   }
+
+  (0, c.useEffect)(() => {
+    if (skipProfileSaveRef.current) {
+      skipProfileSaveRef.current = !1;
+      return;
+    }
+    setSaveState("pending");
+    let tmr = setTimeout(() => persistProfile(), 900);
+    return () => clearTimeout(tmr);
+  }, [interests, difficulties, systemPrompt, skills]);
 
   async function handleAskAI() {
     if (busy) return;
@@ -46,12 +72,7 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
     setMsg(null);
     try {
       if (onSaveAI) {
-        await onSaveAI({
-          learnerInterests: interests.trim(),
-          learnerDifficulties: difficulties.trim(),
-          suggestSystemPrompt: systemPrompt,
-          suggestSkills: skills
-        });
+        await onSaveAI(profilePayload());
       }
       let result = await requestContentSuggestions({
         history,
@@ -79,7 +100,10 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
   }
 
   function updateItem(id, patch) {
-    setInbox(inbox.map(item => item.id === id ? Object.assign({}, item, patch) : item));
+    let next = inbox.map(item => item.id === id ? Object.assign({}, item, patch) : item);
+    setInbox(next);
+    if (inboxTimerRef.current) clearTimeout(inboxTimerRef.current);
+    inboxTimerRef.current = setTimeout(() => persistInbox(next), 900);
   }
 
   function discardItem(id) {
@@ -266,11 +290,20 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
               })
             ]
           }),
-          (0, u.jsx)("button", {
-            type: "button",
-            onClick: handleSaveProfile,
-            className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-base-raised text-white hover:bg-base-strong transition-colors",
-            children: "Salvar perfil, prompt e skills"
+          (0, u.jsxs)("div", {
+            className: "flex flex-wrap items-center gap-2",
+            children: [
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: handleSaveProfile,
+                className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-violet text-white hover:bg-violet-light transition-colors",
+                children: "Salvar agora"
+              }),
+              (0, u.jsx)("span", {
+                className: "font-mono text-[10px] " + (saveState === "pending" ? "text-amber" : saveState === "saved" ? "text-teal" : "text-ink-soft"),
+                children: saveState === "pending" ? "A guardar…" : saveState === "saved" ? "Guardado" : "Salva sozinho ao parar de digitar"
+              })
+            ]
           })
         ]
       }),

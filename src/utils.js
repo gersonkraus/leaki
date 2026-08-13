@@ -1293,24 +1293,50 @@ function collapseDuplicateCards(cards) {
   return Array.from(map.values());
 }
 
+function inboxStatusRank(status) {
+  if (status === "inserted") return 3;
+  if (status === "discarded") return 2;
+  return 1;
+}
+
+function pickInboxWinner(prev, next) {
+  if (!prev) return next;
+  if (!next) return prev;
+  let prevRank = inboxStatusRank(prev.status);
+  let nextRank = inboxStatusRank(next.status);
+  if (nextRank > prevRank) return Object.assign({}, prev, next, { status: next.status });
+  if (prevRank > nextRank) return Object.assign({}, next, prev, { status: prev.status });
+  return Object.assign({}, prev, next, { status: prev.status });
+}
+
 function dedupeContentInbox(list) {
-  let seen = new Set();
-  let out = [];
-  (Array.isArray(list) ? list : []).slice().reverse().forEach(item => {
+  let byId = new Map();
+  let noId = [];
+  (Array.isArray(list) ? list : []).forEach(item => {
     if (!item) return;
-    let key = String(item.status || "pending") + ":" + (item.front ? normalizeStr(item.front) : String(item.id || Math.random()));
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(item);
+    if (item.id) {
+      byId.set(item.id, pickInboxWinner(byId.get(item.id), item));
+      return;
+    }
+    noId.push(item);
   });
-  return out.reverse();
+  let byFront = new Map();
+  byId.forEach(item => {
+    let key = item.front ? normalizeStr(item.front) : "id:" + item.id;
+    byFront.set(key, pickInboxWinner(byFront.get(key), item));
+  });
+  noId.forEach(item => {
+    let key = item.front ? normalizeStr(item.front) : "id:" + (item.id || Math.random());
+    byFront.set(key, pickInboxWinner(byFront.get(key), item));
+  });
+  return Array.from(byFront.values());
 }
 
 function pruneContentInbox(list) {
   let items = dedupeContentInbox(list);
-  let pending = items.filter(item => item && item.status === "pending");
-  let done = items.filter(item => item && item.status !== "pending").slice(-20);
-  return pending.concat(done).slice(0, 40);
+  let pending = items.filter(item => item && item.status === "pending").slice(0, 40);
+  let done = items.filter(item => item && item.status !== "pending").slice(-40);
+  return pending.concat(done);
 }
 
 const DEFAULT_SYNC_HOST = "https://leaki.gerson.com";
@@ -1353,6 +1379,198 @@ function defaultSyncConfig() {
     lastAt: "",
     lastError: "",
     lastStatus: ""
+  };
+}
+
+const LEARNERS_KEY = "leaki:learners";
+
+function learnerDataKey(id) {
+  return "leaki:learner-data:" + String(id || "");
+}
+
+function nextLearnerName(learners) {
+  return "Criança " + (((learners && learners.length) || 0) + 1);
+}
+
+function normalizeLearner(raw, index) {
+  let src = raw && typeof raw === "object" ? raw : {};
+  let idx = Number.isFinite(index) ? index : 0;
+  return {
+    id: String(src.id || "").trim() || ("lrn-" + (idx + 1)),
+    name: String(src.name || "").trim() || ("Criança " + (idx + 1)),
+    pairKey: src.pairKey ? normalizePairKey(src.pairKey) : "",
+    syncUrl: resolveSyncBase(src.syncUrl || DEFAULT_SYNC_HOST),
+    enabled: !!src.enabled,
+    rev: Number(src.rev) || 0,
+    lastAt: src.lastAt || "",
+    lastError: src.lastError || "",
+    lastStatus: src.lastStatus || ""
+  };
+}
+
+function migrateLearnersState(saved, syncCfg) {
+  let cfg = Object.assign({}, defaultSyncConfig(), syncCfg || {});
+  if (saved && Array.isArray(saved.learners) && saved.learners.length) {
+    let learners = saved.learners.map((item, i) => normalizeLearner(item, i));
+    let activeId = saved.activeId && learners.some(item => item.id === saved.activeId)
+      ? saved.activeId
+      : learners[0].id;
+    return { version: 1, activeId, learners };
+  }
+  let first = normalizeLearner({
+    id: "lrn-1",
+    name: "Criança 1",
+    pairKey: cfg.pairKey,
+    syncUrl: cfg.syncUrl,
+    enabled: cfg.enabled,
+    rev: cfg.rev,
+    lastAt: cfg.lastAt,
+    lastError: cfg.lastError,
+    lastStatus: cfg.lastStatus
+  }, 0);
+  return { version: 1, activeId: first.id, learners: [first] };
+}
+
+function emptyLearnerBundle() {
+  return {
+    decks: [],
+    cards: [],
+    history: [],
+    aiSettings: { provider: "native", geminiKey: "", geminiModel: "gemini-2.0-flash", ttsVoice: "" },
+    sync: defaultSyncConfig()
+  };
+}
+
+function snapshotLearnerBundle(src) {
+  let data = src || {};
+  return {
+    decks: Array.isArray(data.decks) ? data.decks : [],
+    cards: Array.isArray(data.cards) ? data.cards : [],
+    history: Array.isArray(data.history) ? data.history : [],
+    aiSettings: Object.assign({}, data.aiSettings || {}),
+    sync: Object.assign({}, defaultSyncConfig(), data.sync || {})
+  };
+}
+
+function sharedParentSecrets(aiSettings) {
+  let a = aiSettings || {};
+  let out = {};
+  ["pinHash", "pinSalt", "geminiKey", "geminiKeyEnc", "geminiKeyIv", "openaiKey", "openaiKeyEnc", "openaiKeyIv", "provider", "geminiModel", "openaiModel", "ttsVoice", "evalRules"].forEach(key => {
+    if (a[key] != null && a[key] !== "") out[key] = a[key];
+  });
+  return out;
+}
+
+function makeNewLearnerBundle(aiSettings, syncPartial) {
+  let sync = Object.assign({}, defaultSyncConfig(), syncPartial || {});
+  if (!sync.pairKey) sync.pairKey = generatePairKey();
+  return {
+    decks: [],
+    cards: [],
+    history: [],
+    aiSettings: Object.assign({
+      provider: "native",
+      geminiKey: "",
+      geminiModel: "gemini-2.0-flash",
+      ttsVoice: ""
+    }, sharedParentSecrets(aiSettings)),
+    sync
+  };
+}
+
+function applyLearnerSwitch(bundles, activeId, currentBundle, nextId) {
+  if (!nextId || nextId === activeId) {
+    return {
+      bundles: bundles || {},
+      activeId,
+      bundle: currentBundle || emptyLearnerBundle()
+    };
+  }
+  let nextBundles = Object.assign({}, bundles || {});
+  if (activeId) nextBundles[activeId] = snapshotLearnerBundle(currentBundle);
+  let incoming = nextBundles[nextId] ? snapshotLearnerBundle(nextBundles[nextId]) : emptyLearnerBundle();
+  nextBundles[nextId] = incoming;
+  return { bundles: nextBundles, activeId: nextId, bundle: incoming };
+}
+
+function combineLearnerReports(reports) {
+  let history = [];
+  let cards = [];
+  let decks = [];
+  (reports || []).forEach(rep => {
+    if (!rep) return;
+    (rep.history || []).forEach(row => {
+      if (!row) return;
+      history.push(Object.assign({}, row, {
+        learnerId: rep.id,
+        learnerName: rep.name || "",
+        deckName: row.deckName ? ((rep.name || "") + " · " + row.deckName) : (rep.name || row.deckName || "")
+      }));
+    });
+    (rep.cards || []).forEach(card => {
+      if (card) cards.push(card);
+    });
+    (rep.decks || []).forEach(deck => {
+      if (deck) decks.push(deck);
+    });
+  });
+  history.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  return { history, cards, decks };
+}
+
+function selectReportView(scope, activeReport, allReports) {
+  if (scope === "all") return combineLearnerReports(allReports);
+  let src = activeReport || {};
+  return {
+    history: src.history || [],
+    cards: src.cards || [],
+    decks: src.decks || []
+  };
+}
+
+function addLearnerToState(state, opts) {
+  let src = state || { version: 1, activeId: "", learners: [] };
+  let learners = (src.learners || []).slice();
+  let extra = opts || {};
+  let learner = normalizeLearner({
+    id: extra.id || ("lrn-" + Date.now().toString(16) + "-" + Math.random().toString(16).slice(2, 6)),
+    name: extra.name || nextLearnerName(learners),
+    pairKey: extra.pairKey || generatePairKey(),
+    syncUrl: extra.syncUrl || DEFAULT_SYNC_HOST,
+    enabled: extra.enabled !== !1
+  }, learners.length);
+  learners.push(learner);
+  return {
+    state: { version: 1, activeId: src.activeId, learners },
+    learner
+  };
+}
+
+function renameLearnerInState(state, id, name) {
+  let nextName = String(name || "").trim();
+  if (!state || !id || !nextName) return state;
+  return {
+    version: 1,
+    activeId: state.activeId,
+    learners: (state.learners || []).map(item => item.id === id ? Object.assign({}, item, { name: nextName }) : item)
+  };
+}
+
+function syncLearnerMeta(state, learnerId, syncCfg) {
+  if (!state || !learnerId) return state;
+  let cfg = Object.assign({}, defaultSyncConfig(), syncCfg || {});
+  return {
+    version: 1,
+    activeId: state.activeId,
+    learners: (state.learners || []).map(item => item.id === learnerId ? Object.assign({}, item, {
+      pairKey: cfg.pairKey,
+      syncUrl: cfg.syncUrl,
+      enabled: cfg.enabled,
+      rev: cfg.rev,
+      lastAt: cfg.lastAt,
+      lastError: cfg.lastError,
+      lastStatus: cfg.lastStatus
+    }) : item)
   };
 }
 
@@ -1406,19 +1624,61 @@ function mergeHistory(local, remote) {
   return Array.from(map.values()).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 }
 
+function aiTextFilled(v) {
+  return String(v || "").trim().length > 0;
+}
+
+function suggestProfileStamp(cfg) {
+  let t = Date.parse(cfg && cfg.suggestProfileAt);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pickSuggestProfile(local, remote) {
+  let l = local || {};
+  let r = remote || {};
+  let lAt = suggestProfileStamp(l);
+  let rAt = suggestProfileStamp(r);
+  if (lAt || rAt) {
+    let winner = rAt > lAt ? r : l;
+    return {
+      learnerInterests: winner.learnerInterests || "",
+      learnerDifficulties: winner.learnerDifficulties || "",
+      suggestSystemPrompt: winner.suggestSystemPrompt || "",
+      suggestSkills: Array.isArray(winner.suggestSkills) ? winner.suggestSkills : [],
+      suggestProfileAt: winner.suggestProfileAt || ""
+    };
+  }
+  return {
+    learnerInterests: aiTextFilled(l.learnerInterests) ? l.learnerInterests : (r.learnerInterests || ""),
+    learnerDifficulties: aiTextFilled(l.learnerDifficulties) ? l.learnerDifficulties : (r.learnerDifficulties || ""),
+    suggestSystemPrompt: aiTextFilled(l.suggestSystemPrompt) ? l.suggestSystemPrompt : (r.suggestSystemPrompt || ""),
+    suggestSkills: Array.isArray(l.suggestSkills) && l.suggestSkills.length
+      ? l.suggestSkills
+      : (Array.isArray(r.suggestSkills) ? r.suggestSkills : []),
+    suggestProfileAt: l.suggestProfileAt || r.suggestProfileAt || ""
+  };
+}
+
 function mergeAiSettingsForSync(local, remote) {
-  let next = Object.assign({}, local || {}, remote || {});
-  if (local && local.geminiKey) next.geminiKey = local.geminiKey;
-  if (local && local.openaiKey) next.openaiKey = local.openaiKey;
-  if (local && local.geminiKeyEnc && !next.geminiKeyEnc) {
-    next.geminiKeyEnc = local.geminiKeyEnc;
-    next.geminiKeyIv = local.geminiKeyIv;
+  let l = local || {};
+  let r = remote || {};
+  let next = Object.assign({}, l, r);
+  if (l.geminiKey) next.geminiKey = l.geminiKey;
+  if (l.openaiKey) next.openaiKey = l.openaiKey;
+  if (l.geminiKeyEnc && !next.geminiKeyEnc) {
+    next.geminiKeyEnc = l.geminiKeyEnc;
+    next.geminiKeyIv = l.geminiKeyIv;
   }
-  if (local && local.openaiKeyEnc && !next.openaiKeyEnc) {
-    next.openaiKeyEnc = local.openaiKeyEnc;
-    next.openaiKeyIv = local.openaiKeyIv;
+  if (l.openaiKeyEnc && !next.openaiKeyEnc) {
+    next.openaiKeyEnc = l.openaiKeyEnc;
+    next.openaiKeyIv = l.openaiKeyIv;
   }
-  next.contentInbox = pruneContentInbox([].concat((local && local.contentInbox) || [], (remote && remote.contentInbox) || []));
+  ["provider", "geminiModel", "openaiModel", "ttsVoice"].forEach(key => {
+    if (!aiTextFilled(next[key]) && aiTextFilled(l[key])) next[key] = l[key];
+  });
+  if ((!next.evalRules || typeof next.evalRules !== "object") && l.evalRules) next.evalRules = l.evalRules;
+  Object.assign(next, pickSuggestProfile(l, r));
+  next.contentInbox = pruneContentInbox([].concat(l.contentInbox || [], r.contentInbox || []));
   return next;
 }
 
@@ -1435,11 +1695,19 @@ function mergeSyncSnapshot(local, remote) {
 
 function snapshotsLookSame(a, b) {
   function print(s) {
+    let ai = s.aiSettings || {};
     return JSON.stringify({
       decks: (s.decks || []).map(d => [d.id, d.name]),
       cards: (s.cards || []).map(c => [c.id, c.front, c.due, c.reps]),
       history: (s.history || []).map(h => h.date),
-      inbox: ((s.aiSettings && s.aiSettings.contentInbox) || []).map(i => i.id + ":" + i.status)
+      inbox: (ai.contentInbox || []).map(i => i.id + ":" + i.status),
+      suggest: [
+        ai.learnerInterests || "",
+        ai.learnerDifficulties || "",
+        ai.suggestSystemPrompt || "",
+        (ai.suggestSkills || []).map(sk => (sk && sk.id) || "").join(","),
+        ai.suggestProfileAt || ""
+      ]
     });
   }
   return print(a || {}) === print(b || {});

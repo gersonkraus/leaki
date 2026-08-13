@@ -41,6 +41,74 @@ assert.equal(merged.history.length, 2);
 assert.equal(merged.aiSettings.geminiKey, "AIza-secret");
 assert.equal(merged.aiSettings.learnerInterests, "gatos");
 
+const inboxMerged = api.mergeAiSettingsForSync(
+  {
+    contentInbox: [
+      { id: "sug-1", status: "discarded", front: "CASA" },
+      { id: "sug-2", status: "pending", front: "MESA" }
+    ]
+  },
+  {
+    contentInbox: [
+      { id: "sug-1", status: "pending", front: "CASA" },
+      { id: "sug-2", status: "pending", front: "MESA" }
+    ]
+  }
+);
+assert.equal(inboxMerged.contentInbox.filter((i) => i.front === "CASA").length, 1);
+assert.equal(inboxMerged.contentInbox.find((i) => i.front === "CASA").status, "discarded");
+assert.equal(inboxMerged.contentInbox.find((i) => i.id === "sug-2").status, "pending");
+
+const keptProfile = api.mergeAiSettingsForSync(
+  {
+    learnerInterests: "dinossauros",
+    learnerDifficulties: "troca B/P",
+    suggestSystemPrompt: "prompt customizado do adulto",
+    suggestSkills: [{ id: "verso-igual", name: "verso-igual", text: "back copia front", enabled: true }]
+  },
+  {
+    learnerInterests: "",
+    learnerDifficulties: "",
+    suggestSystemPrompt: "",
+    suggestSkills: []
+  }
+);
+assert.equal(keptProfile.learnerInterests, "dinossauros");
+assert.equal(keptProfile.learnerDifficulties, "troca B/P");
+assert.equal(keptProfile.suggestSystemPrompt, "prompt customizado do adulto");
+assert.equal(keptProfile.suggestSkills.length, 1);
+assert.equal(keptProfile.suggestSkills[0].name, "verso-igual");
+
+const newerClears = api.mergeAiSettingsForSync(
+  {
+    learnerInterests: "gatos",
+    suggestSystemPrompt: "antigo",
+    suggestProfileAt: "2026-08-12T10:00:00.000Z"
+  },
+  {
+    learnerInterests: "",
+    suggestSystemPrompt: "",
+    suggestProfileAt: "2026-08-13T10:00:00.000Z"
+  }
+);
+assert.equal(newerClears.learnerInterests, "");
+assert.equal(newerClears.suggestSystemPrompt, "");
+
+const olderEmptyLoses = api.mergeAiSettingsForSync(
+  {
+    learnerInterests: "gatos",
+    suggestSystemPrompt: "fica",
+    suggestProfileAt: "2026-08-13T12:00:00.000Z"
+  },
+  {
+    learnerInterests: "",
+    suggestSystemPrompt: "",
+    suggestProfileAt: "2026-08-12T12:00:00.000Z"
+  }
+);
+assert.equal(olderEmptyLoses.learnerInterests, "gatos");
+assert.equal(olderEmptyLoses.suggestSystemPrompt, "fica");
+
 const snap = api.snapshotForSync(
   [{ id: "d1", name: "A" }],
   [{ id: "c1", front: "BOLA", frontAudio: "data:audio/mpeg;base64,xx" }],
@@ -98,6 +166,20 @@ assert.equal(conflict.status, 409);
 
 const got = await (await fetch(base + "/sync/" + key)).json();
 assert.equal(got.snapshot.decks[0].name, "Site");
+
+const key2 = api.generatePairKey();
+const put2 = await fetch(base + "/sync/" + key2, {
+  method: "PUT",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ rev: 0, snapshot: { decks: [{ id: "d2", name: "Celular2" }], cards: [{ id: "c2", front: "PATO" }], history: [] } })
+});
+assert.equal(put2.status, 200);
+const gotA = await (await fetch(base + "/sync/" + key)).json();
+const gotB = await (await fetch(base + "/sync/" + key2)).json();
+assert.equal(gotA.snapshot.decks[0].name, "Site", "chave A não pode receber o conteúdo da B");
+assert.equal(gotB.snapshot.decks[0].name, "Celular2");
+assert.equal((gotA.snapshot.cards || []).length, 0);
+assert.equal(gotB.snapshot.cards[0].front, "PATO");
 
 const panel = readFileSync(new URL("../src/components/SyncPanel.js", import.meta.url), "utf8");
 assert.match(panel, /leaki\.gerson\.com/);
