@@ -35,6 +35,7 @@ const utils = read('utils.js');
 // Components (in dependency order)
 const parentAuthModal = readComponent('ParentAuthModal.js');
 const backupModal = readComponent('BackupModal.js');
+const contentSuggestPanel = readComponent('ContentSuggestPanel.js');
 const statsPanel = readComponent('StatsPanel.js');
 const deckList = readComponent('DeckList.js');
 const deckDetail = readComponent('DeckDetail.js');
@@ -53,6 +54,7 @@ const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><met
 ${utils}
 ${parentAuthModal}
 ${backupModal}
+${contentSuggestPanel}
 ${statsPanel}
 ${deckList}
 ${deckDetail}

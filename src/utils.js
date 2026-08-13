@@ -870,3 +870,241 @@ async function transcribeWithOpenAI(audioBlob, apiKey, modelName) {
   return String(data.text || "").trim();
 }
 
+function pickContentSuggestBackend(cfg) {
+  if (!cfg) return null;
+  if (cfg.provider === "openai" && cfg.openaiKey) return "openai";
+  if (cfg.provider === "gemini" && cfg.geminiKey) return "gemini";
+  if (cfg.geminiKey) return "gemini";
+  if (cfg.openaiKey) return "openai";
+  return null;
+}
+
+function buildLearnerEvidence(history, cards, decks, profile, nowMs) {
+  let digest = buildParentDigest(history, cards, nowMs);
+  let existingFronts = (cards || []).map(card => String(card.front || "").trim()).filter(Boolean);
+  let decksInfo = (decks || []).map(deck => ({
+    id: deck.id,
+    name: deck.name || "Baralho",
+    cardCount: (cards || []).filter(card => card.deckId === deck.id).length
+  }));
+  let voiceAttempts = [];
+  (history || []).forEach(session => {
+    (session.voiceAttempts || []).forEach(va => {
+      voiceAttempts.push({
+        word: String(va.word || "").trim(),
+        spoken: String(va.spoken || "").trim(),
+        accuracy: Number(va.accuracy) || 0,
+        date: session.date,
+        deckName: session.deckName || ""
+      });
+    });
+  });
+  voiceAttempts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  let confusions = voiceAttempts
+    .filter(va => va.word && va.spoken && va.accuracy < 80)
+    .slice(0, 20)
+    .map(va => ({ expected: va.word, spoken: va.spoken, accuracy: va.accuracy }));
+  return {
+    interests: String(profile && profile.interests || "").trim(),
+    difficulties: String(profile && profile.difficulties || "").trim(),
+    sessions: digest.sessions,
+    minutes: digest.minutes,
+    voiceAvg: digest.voiceAvg,
+    voiceCount: digest.voiceCount,
+    hardWords: digest.hardWords,
+    existingFronts: existingFronts.slice(0, 200),
+    decks: decksInfo,
+    recentVoice: voiceAttempts.slice(0, 20),
+    confusions
+  };
+}
+
+function canRequestContentSuggestions(evidence) {
+  if (!evidence) return !1;
+  if (evidence.interests) return !0;
+  if (evidence.difficulties) return !0;
+  if (evidence.hardWords && evidence.hardWords.length) return !0;
+  if (evidence.confusions && evidence.confusions.length) return !0;
+  return !1;
+}
+
+function parseJsonLoose(text) {
+  let raw = String(text || "").replaceAll("```json", "").replaceAll("```", "").trim();
+  let start = raw.indexOf("{");
+  let end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("Resposta da IA não veio em JSON.");
+  return JSON.parse(raw.slice(start, end + 1));
+}
+
+function normalizeContentSuggestion(raw, existingKeys) {
+  if (!raw || typeof raw !== "object") return null;
+  let kind = String(raw.kind || "word").toLowerCase();
+  if (kind !== "word" && kind !== "phrase" && kind !== "text") kind = "word";
+  let front = String(raw.front || "").trim();
+  if (!front) return null;
+  if (existingKeys && existingKeys.has(normalizeStr(front))) return null;
+  let basedOn = Array.isArray(raw.basedOn)
+    ? raw.basedOn.map(item => String(item || "").trim()).filter(Boolean).slice(0, 6)
+    : [];
+  return {
+    kind,
+    front,
+    back: String(raw.back || "").trim(),
+    reason: String(raw.reason || "").trim(),
+    basedOn,
+    deckHint: String(raw.deckHint || raw.deck || "").trim()
+  };
+}
+
+function parseContentSuggestions(payload, existingFronts) {
+  let keys = new Set((existingFronts || []).map(front => normalizeStr(front)));
+  let list = [];
+  if (Array.isArray(payload)) list = payload;
+  else if (payload && Array.isArray(payload.suggestions)) list = payload.suggestions;
+  let out = [];
+  let seen = new Set();
+  list.forEach(item => {
+    let next = normalizeContentSuggestion(item, keys);
+    if (!next) return;
+    let key = normalizeStr(next.front);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(next);
+  });
+  return out.slice(0, 12);
+}
+
+function buildContentSuggestPrompt(evidence) {
+  let data = {
+    interesses: (evidence && evidence.interests) || "(não informado)",
+    dificuldadesAnotadasPeloAdulto: (evidence && evidence.difficulties) || "(não informado)",
+    semana: {
+      sessoes: evidence && evidence.sessions,
+      minutos: evidence && evidence.minutes,
+      vozMedia: evidence && evidence.voiceAvg,
+      tentativasVoz: evidence && evidence.voiceCount
+    },
+    palavrasComDificuldade: (evidence && evidence.hardWords) || [],
+    trocasFaladas: (evidence && evidence.confusions) || [],
+    baralhos: (evidence && evidence.decks) || [],
+    frentesJaCadastradas: (evidence && evidence.existingFronts) || []
+  };
+  return [
+    "Você é um professor de alfabetização em português do Brasil.",
+    "Sugira fichas de leitura para UMA criança. A frente é o que ela lê; o verso é apoio para o adulto.",
+    "REGRAS:",
+    "1. Use APENAS os dados reais abaixo. Não invente diagnóstico, sessão ou erro que não esteja listado.",
+    "2. Não repita nenhuma frente já cadastrada.",
+    "3. Priorize nesta ordem: (a) reusar palavras que ela errou em frase ou texto novo; (b) pares mínimos das trocas faladas (ex.: BOLA/BOTA); (c) vocabulário dos interesses só se isso ajudar a praticar a dificuldade anotada.",
+    "4. Tipos: word = 1 palavra em MAIÚSCULAS; phrase = 1 frase curta; text = 2 a 4 frases simples.",
+    "5. Devolva de 8 a 10 itens, misturando word, phrase e text.",
+    "6. reason deve citar o dado real (palavra, porcentagem, troca falada, interesse ou dificuldade anotada).",
+    "7. Responda SOMENTE JSON no formato {\"suggestions\":[{\"kind\":\"word|phrase|text\",\"front\":\"\",\"back\":\"\",\"reason\":\"\",\"basedOn\":[\"\"],\"deckHint\":\"\"}]}",
+    "",
+    "DADOS REAIS:",
+    JSON.stringify(data)
+  ].join("\n");
+}
+
+const CONTENT_SUGGEST_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    suggestions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          kind: { type: "STRING" },
+          front: { type: "STRING" },
+          back: { type: "STRING" },
+          reason: { type: "STRING" },
+          basedOn: { type: "ARRAY", items: { type: "STRING" } },
+          deckHint: { type: "STRING" }
+        },
+        required: ["kind", "front", "reason"]
+      }
+    }
+  },
+  required: ["suggestions"]
+};
+
+async function suggestContentWithGemini(prompt, apiKey, modelName) {
+  let model = (modelName || "gemini-2.0-flash").trim();
+  let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4,
+        responseMimeType: "application/json",
+        responseSchema: CONTENT_SUGGEST_SCHEMA
+      }
+    })
+  });
+  if (!response.ok) {
+    let errText = await response.text().catch(() => "");
+    throw new Error("Erro na API Gemini (" + response.status + "): " + errText);
+  }
+  let data = await response.json();
+  let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  return parseJsonLoose(text);
+}
+
+async function suggestContentWithOpenAI(prompt, apiKey) {
+  let response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "Responda somente JSON válido com a chave suggestions." },
+        { role: "user", content: prompt }
+      ]
+    })
+  });
+  if (!response.ok) {
+    let errText = await response.text().catch(() => "");
+    throw new Error("Erro na API OpenAI (" + response.status + "): " + errText);
+  }
+  let data = await response.json();
+  return parseJsonLoose(data.choices?.[0]?.message?.content || "{}");
+}
+
+async function requestContentSuggestions({ history, cards, decks, aiCfg, nowMs }) {
+  let evidence = buildLearnerEvidence(history, cards, decks, {
+    interests: aiCfg && aiCfg.learnerInterests,
+    difficulties: aiCfg && aiCfg.learnerDifficulties
+  }, nowMs);
+  if (!canRequestContentSuggestions(evidence)) {
+    throw new Error("Preencha interesses ou dificuldades, ou espere a criança estudar para haver logs.");
+  }
+  let backend = pickContentSuggestBackend(aiCfg);
+  if (!backend) throw new Error("Configure uma chave Gemini ou OpenAI na aba IA.");
+  let prompt = buildContentSuggestPrompt(evidence);
+  let raw = backend === "openai"
+    ? await suggestContentWithOpenAI(prompt, aiCfg.openaiKey)
+    : await suggestContentWithGemini(prompt, aiCfg.geminiKey, aiCfg.geminiModel);
+  let items = parseContentSuggestions(raw, evidence.existingFronts);
+  if (!items.length) throw new Error("A IA não devolveu fichas novas. Revise o perfil ou tente depois de mais estudos.");
+  return { backend, evidence, items };
+}
+
+function suggestionReadingTime(kind) {
+  if (kind === "text") return 20;
+  if (kind === "phrase") return 12;
+  return 7;
+}
+
+function pruneContentInbox(list) {
+  let items = Array.isArray(list) ? list.slice() : [];
+  let pending = items.filter(item => item && item.status === "pending");
+  let done = items.filter(item => item && item.status !== "pending").slice(-20);
+  return pending.concat(done).slice(0, 40);
+}
+

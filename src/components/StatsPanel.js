@@ -1,4 +1,4 @@
-function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onClearHistory: t, onClose: n }) {
+function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n }) {
   let [activeTab, setActiveTab] = (0, c.useState)("stats"),
     [geminiKey, setGeminiKey] = (0, c.useState)(aiCfg?.geminiKey || ""),
     [geminiModel, setGeminiModel] = (0, c.useState)(aiCfg?.geminiModel || "gemini-2.0-flash"),
@@ -55,7 +55,10 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
       openaiKey: openaiToSave,
       openaiModel: openaiModel.trim() || "gpt-4o-transcribe",
       ttsVoice: selectedVoice,
-      evalRules: normalizeEvalRules(evalRules)
+      evalRules: normalizeEvalRules(evalRules),
+      learnerInterests: aiCfg?.learnerInterests || "",
+      learnerDifficulties: aiCfg?.learnerDifficulties || "",
+      contentInbox: aiCfg?.contentInbox || []
     };
     if (onSaveAI) onSaveAI(newCfg);
     setSavedMsg("Configurações salvas com sucesso!");
@@ -76,11 +79,20 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
           }),
           (0, u.jsxs)("button", {
             type: "button",
+            onClick: () => setActiveTab("suggest"),
+            className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("suggest" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
+            children: [
+              (0, u.jsx)("span", { children: "✨" }),
+              " Sugestões"
+            ]
+          }),
+          (0, u.jsxs)("button", {
+            type: "button",
             onClick: () => setActiveTab("ai"),
             className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("ai" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
             children: [
               (0, u.jsx)("span", { children: "🤖" }),
-              " IA & Reconhecimento de Voz"
+              " IA & Voz"
             ]
           })
         ]
@@ -225,6 +237,13 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
             ]
           })
         ]
+      }) : "suggest" === activeTab ? (0, u.jsx)(eContentSuggest, {
+        history: e,
+        cards: cardsList,
+        decks: decksList || [],
+        aiCfg: aiCfg,
+        onSaveAI: onSaveAI,
+        onApproveCards: onApproveCards
       }) : (0, u.jsxs)("form", {
         onSubmit: handleSaveAIConfig,
         className: "p-4 rounded-xl bg-base-surface border border-base-line space-y-3.5",

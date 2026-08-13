@@ -62,6 +62,38 @@ document.head.appendChild(eg);
         setHistory([]);
       }
 
+      function handleApproveSuggestedCards(items) {
+        if (!items || !items.length) return;
+        r(prev => {
+          let next = prev.slice();
+          items.forEach(item => {
+            if (!item || !item.deckId || !String(item.front || "").trim()) return;
+            let seed = I(new Date);
+            next.push({
+              id: ea(),
+              deckId: item.deckId,
+              front: String(item.front).trim(),
+              back: String(item.back || "").trim(),
+              frontAudio: item.frontAudio,
+              backAudio: item.backAudio,
+              readingTime: item.readingTime || suggestionReadingTime(item.kind),
+              due: seed.due.toISOString(),
+              stability: seed.stability,
+              difficulty: seed.difficulty,
+              elapsed_days: seed.elapsed_days,
+              scheduled_days: seed.scheduled_days,
+              learning_steps: seed.learning_steps,
+              reps: seed.reps,
+              lapses: seed.lapses,
+              state: seed.state,
+              last_review: null,
+              createdAt: new Date().toISOString()
+            });
+          });
+          return next;
+        });
+      }
+
       async function handleSaveAISettings(newCfg) {
         let merged = Object.assign({}, aiSettings, newCfg);
         if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "geminiKey") && !newCfg.geminiKeyEnc) {
@@ -280,8 +312,10 @@ document.head.appendChild(eg);
             children: (0, u.jsx)(eParentStats, {
               history: history,
               cards: n,
+              decks: e,
               aiSettings: aiSettings,
               onSaveAISettings: handleSaveAISettings,
+              onApproveCards: handleApproveSuggestedCards,
               onClearHistory: handleClearHistory,
               onClose: () => setKStats(!1)
             })
