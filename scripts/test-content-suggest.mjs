@@ -8,7 +8,7 @@ assert.ok(src.indexOf("function requestContentSuggestions") >= 0, "requestConten
 
 const api = new Function(
   src +
-    "\nreturn { buildLearnerEvidence, canRequestContentSuggestions, parseContentSuggestions, buildContentSuggestPrompt, pickContentSuggestBackend, pruneContentInbox, suggestionReadingTime, parseJsonLoose };"
+    "\nreturn { buildLearnerEvidence, canRequestContentSuggestions, parseContentSuggestions, buildContentSuggestPrompt, buildContentSuggestUserMessage, resolveSuggestSystemPrompt, interpolateSuggestPrompt, buildSuggestPromptVars, formatSuggestLogs, skillSlug, DEFAULT_SUGGEST_SYSTEM_PROMPT, pickContentSuggestBackend, pruneContentInbox, suggestionReadingTime, parseJsonLoose };"
 )();
 
 const {
@@ -16,6 +16,13 @@ const {
   canRequestContentSuggestions,
   parseContentSuggestions,
   buildContentSuggestPrompt,
+  buildContentSuggestUserMessage,
+  resolveSuggestSystemPrompt,
+  interpolateSuggestPrompt,
+  buildSuggestPromptVars,
+  formatSuggestLogs,
+  skillSlug,
+  DEFAULT_SUGGEST_SYSTEM_PROMPT,
   pickContentSuggestBackend,
   pruneContentInbox,
   suggestionReadingTime,
@@ -25,6 +32,11 @@ const {
 const now = Date.parse("2026-08-12T12:00:00Z");
 const evidence = buildLearnerEvidence(
   [
+    {
+      date: "2026-07-01T10:00:00Z",
+      durationSeconds: 60,
+      struggledCards: [{ word: "PIPA", reason: "Voz 40%" }],
+    },
     {
       date: "2026-08-11T10:00:00Z",
       durationSeconds: 120,
@@ -47,7 +59,9 @@ const evidence = buildLearnerEvidence(
 
 assert.equal(evidence.interests, "dinossauros");
 assert.equal(evidence.difficulties, "troca B/P");
-assert.deepEqual(evidence.hardWords.map((w) => w.word), ["BOLA"]);
+assert.ok(evidence.hardWords.map((w) => w.word).includes("BOLA"));
+assert.ok(evidence.hardWords.map((w) => w.word).includes("PIPA"), "logs antigos entram na evidência");
+assert.equal(evidence.sessionsAll, 2);
 assert.equal(evidence.confusions[0].expected, "BOLA");
 assert.equal(evidence.confusions[0].spoken, "bota");
 assert.ok(evidence.existingFronts.includes("BOLA"));
@@ -71,16 +85,43 @@ assert.equal(parsed.length, 3);
 assert.equal(parsed[0].kind, "word");
 assert.equal(parsed[0].front, "BOTA");
 assert.equal(parsed[1].kind, "phrase");
+assert.ok(parsed[1].back, "verso vazio deve ser preenchido com o motivo");
 assert.equal(parsed[2].kind, "word");
 assert.equal(parsed[2].front, "PTERODÁCTILO");
 assert.ok(!parsed.some((item) => item.front.toLowerCase() === "bola"));
+
+assert.match(DEFAULT_SUGGEST_SYSTEM_PROMPT, /\{\{dificuldades\}\}/);
+assert.match(DEFAULT_SUGGEST_SYSTEM_PROMPT, /\{\{interesses\}\}/);
+assert.match(DEFAULT_SUGGEST_SYSTEM_PROMPT, /\{\{logs\}\}/);
+assert.match(DEFAULT_SUGGEST_SYSTEM_PROMPT, /\{\{skills\}\}/);
+assert.match(DEFAULT_SUGGEST_SYSTEM_PROMPT, /Escreva aqui as suas regras/);
+assert.doesNotMatch(DEFAULT_SUGGEST_SYSTEM_PROMPT, /NAVE|LAMA|RATO|PROIBIDOS/);
+assert.equal(resolveSuggestSystemPrompt(""), DEFAULT_SUGGEST_SYSTEM_PROMPT);
+assert.equal(resolveSuggestSystemPrompt("  meu prompt  "), "meu prompt");
+assert.equal(skillSlug("Verso Igual"), "verso-igual");
+
+const vars = buildSuggestPromptVars(evidence, [
+  { name: "verso-igual", text: "back copia front", enabled: true },
+]);
+assert.match(vars.dificuldades, /troca B\/P/);
+assert.match(vars.interesses, /dinossauros/);
+assert.match(vars.logs, /BOLA/);
+assert.match(vars.skills, /back copia front/);
+assert.equal(
+  interpolateSuggestPrompt("Dif: {{dificuldades}} | {{skill:verso-igual}}", vars),
+  "Dif: troca B/P | back copia front",
+);
+
+const userMsg = buildContentSuggestUserMessage(evidence);
+assert.match(userMsg, /troca B\/P/);
+assert.match(userMsg, /dinossauros/);
+assert.match(userMsg, /PIPA/);
 
 const prompt = buildContentSuggestPrompt(evidence);
 assert.match(prompt, /BOLA/);
 assert.match(prompt, /dinossauros/);
 assert.match(prompt, /troca B\/P/);
-assert.match(prompt, /Não invente/);
-assert.match(prompt, /frentesJaCadastradas/);
+assert.doesNotMatch(prompt, /NAVE|PROIBIDOS/);
 
 assert.equal(pickContentSuggestBackend({ provider: "native" }), null);
 assert.equal(pickContentSuggestBackend({ provider: "native", geminiKey: "AIza" }), "gemini");
@@ -102,6 +143,9 @@ assert.deepEqual(parseJsonLoose("prefix {\"suggestions\":[1]} suffix"), { sugges
 const panel = readFileSync("src/components/ContentSuggestPanel.js", "utf8");
 assert.match(panel, /Liberar/);
 assert.match(panel, /Pedir sugestões à IA/);
+assert.match(panel, /suggestSystemPrompt|Prompt do sistema/);
+assert.match(panel, /\{\{logs\}\}/);
+assert.match(panel, /Adicionar skill/);
 assert.doesNotMatch(panel, /onApproveCards\(\s*result/);
 assert.match(readFileSync("src/app.js", "utf8"), /buildNewCard/);
 assert.match(src, /x-goog-api-key/);

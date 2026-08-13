@@ -58,6 +58,8 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
       evalRules: normalizeEvalRules(evalRules),
       learnerInterests: aiCfg?.learnerInterests || "",
       learnerDifficulties: aiCfg?.learnerDifficulties || "",
+      suggestSystemPrompt: aiCfg?.suggestSystemPrompt || "",
+      suggestSkills: aiCfg?.suggestSkills || [],
       contentInbox: aiCfg?.contentInbox || []
     };
     if (onSaveAI) onSaveAI(newCfg);
@@ -65,51 +67,43 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
     setTimeout(() => setSavedMsg(null), 3000);
   }
 
+  let tabs = [
+    { id: "stats", label: "Relatório" },
+    { id: "suggest", label: "Sugestões" },
+    { id: "sync", label: "Sync" },
+    { id: "ai", label: "IA e voz" }
+  ];
+
   return (0, u.jsxs)("div", {
-    className: "space-y-4 text-sm",
+    className: "admin-layout text-sm",
     children: [
-      (0, u.jsxs)("div", {
-        className: "flex border-b border-base-line gap-4 text-xs font-mono mb-2",
-        children: [
-          (0, u.jsxs)("button", {
-            type: "button",
-            onClick: () => setActiveTab("stats"),
-            className: "pb-2 border-b-2 font-medium transition-colors " + ("stats" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
-            children: ["📊 Histórico & Estatísticas"]
-          }),
-          (0, u.jsxs)("button", {
-            type: "button",
-            onClick: () => setActiveTab("suggest"),
-            className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("suggest" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
-            children: [
-              (0, u.jsx)("span", { children: "✨" }),
-              " Sugestões"
-            ]
-          }),
-          (0, u.jsxs)("button", {
-            type: "button",
-            onClick: () => setActiveTab("sync"),
-            className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("sync" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
-            children: [
-              (0, u.jsx)("span", { children: "🔗" }),
-              " Sync"
-            ]
-          }),
-          (0, u.jsxs)("button", {
-            type: "button",
-            onClick: () => setActiveTab("ai"),
-            className: "pb-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 " + ("ai" === activeTab ? "border-violet text-white" : "border-transparent text-ink-soft hover:text-ink"),
-            children: [
-              (0, u.jsx)("span", { children: "🤖" }),
-              " IA & Voz"
-            ]
-          })
-        ]
+      (0, u.jsx)("div", {
+        className: "admin-nav",
+        role: "tablist",
+        "aria-label": "Seções do painel",
+        children: tabs.map(tab => (0, u.jsx)("button", {
+          type: "button",
+          role: "tab",
+          id: "admin-tab-" + tab.id,
+          "aria-selected": activeTab === tab.id,
+          "aria-controls": "admin-panel-" + tab.id,
+          onClick: () => setActiveTab(tab.id),
+          className: "admin-nav-btn" + (activeTab === tab.id ? " is-active" : ""),
+          children: tab.label
+        }, tab.id))
       }),
-      (function renderActiveTab() {
+      (0, u.jsx)("div", {
+        className: "admin-body catalog-scrollbar",
+        role: "tabpanel",
+        id: "admin-panel-" + activeTab,
+        "aria-labelledby": "admin-tab-" + activeTab,
+        children: (function renderActiveTab() {
         if ("stats" === activeTab) return (0, u.jsxs)("div", {
         className: "space-y-4",
         children: [
+          (0, u.jsxs)("div", {
+            className: "admin-stats-top",
+            children: [
           (0, u.jsxs)("div", {
             className: "p-4 rounded-xl bg-violet-dim border border-violet/40 space-y-2",
             children: [
@@ -150,6 +144,8 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
                 ]
               })
             ]
+          })
+            ]
           }),
           (0, u.jsxs)("div", {
             className: "p-4 rounded-xl bg-base-surface border border-base-line space-y-3",
@@ -170,7 +166,7 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
                 className: "text-xs text-ink-soft py-4 text-center font-mono",
                 children: "Nenhuma sessão realizada ainda. As estatísticas aparecerão aqui após cada estudo."
               }) : (0, u.jsx)("div", {
-                className: "space-y-2 max-h-64 overflow-y-auto pr-1",
+                className: "admin-session-list",
                 children: e.slice().reverse().map((e, t) => {
                   let a = e.avgTimePerCard && e.avgTimePerCard < 3,
                     hesCount = e.struggledCards ? e.struggledCards.length : 0,
@@ -519,15 +515,7 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
           })
         ]
       });
-      })(),
-      (0, u.jsx)("div", {
-        className: "flex justify-end pt-1",
-        children: (0, u.jsx)("button", {
-          type: "button",
-          onClick: n,
-          className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-base-raised text-ink-soft hover:text-ink hover:bg-base-strong transition-colors",
-          children: "Fechar"
-        })
+      })()
       })
     ]
   });

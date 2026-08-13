@@ -879,6 +879,21 @@ function pickContentSuggestBackend(cfg) {
   return null;
 }
 
+function collectHardWordsFromHistory(history) {
+  let wordMap = new Map();
+  (history || []).forEach(session => {
+    (session.struggledCards || []).forEach(sc => {
+      let key = String(sc.word || "").trim();
+      if (!key) return;
+      let cur = wordMap.get(key) || { word: key, count: 0, lastReason: "" };
+      cur.count += 1;
+      cur.lastReason = sc.reason || cur.lastReason;
+      wordMap.set(key, cur);
+    });
+  });
+  return Array.from(wordMap.values()).sort((a, b) => b.count - a.count).slice(0, 16);
+}
+
 function buildLearnerEvidence(history, cards, decks, profile, nowMs) {
   let digest = buildParentDigest(history, cards, nowMs);
   let existingFronts = (cards || []).map(card => String(card.front || "").trim()).filter(Boolean);
@@ -902,19 +917,22 @@ function buildLearnerEvidence(history, cards, decks, profile, nowMs) {
   voiceAttempts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   let confusions = voiceAttempts
     .filter(va => va.word && va.spoken && va.accuracy < 80)
-    .slice(0, 20)
-    .map(va => ({ expected: va.word, spoken: va.spoken, accuracy: va.accuracy }));
+    .slice(0, 40)
+    .map(va => ({ expected: va.word, spoken: va.spoken, accuracy: va.accuracy, date: va.date }));
+  let hardWordsAll = collectHardWordsFromHistory(history);
   return {
     interests: String(profile && profile.interests || "").trim(),
     difficulties: String(profile && profile.difficulties || "").trim(),
     sessions: digest.sessions,
+    sessionsAll: (history || []).length,
     minutes: digest.minutes,
     voiceAvg: digest.voiceAvg,
     voiceCount: digest.voiceCount,
-    hardWords: digest.hardWords,
+    hardWords: hardWordsAll.length ? hardWordsAll : digest.hardWords,
+    hardWordsWeek: digest.hardWords,
     existingFronts: existingFronts.slice(0, 200),
     decks: decksInfo,
-    recentVoice: voiceAttempts.slice(0, 20),
+    recentVoice: voiceAttempts.slice(0, 40),
     confusions
   };
 }
@@ -946,11 +964,14 @@ function normalizeContentSuggestion(raw, existingKeys) {
   let basedOn = Array.isArray(raw.basedOn)
     ? raw.basedOn.map(item => String(item || "").trim()).filter(Boolean).slice(0, 6)
     : [];
+  let reason = String(raw.reason || "").trim();
+  let back = String(raw.back || "").trim();
+  if (!back) back = reason || (basedOn.length ? "Praticar: " + basedOn.join(", ") : "Apoio do adulto");
   return {
     kind,
     front,
-    back: String(raw.back || "").trim(),
-    reason: String(raw.reason || "").trim(),
+    back,
+    reason,
     basedOn,
     deckHint: String(raw.deckHint || raw.deck || "").trim()
   };
@@ -974,36 +995,110 @@ function parseContentSuggestions(payload, existingFronts) {
   return out.slice(0, 12);
 }
 
-function buildContentSuggestPrompt(evidence) {
-  let data = {
-    interesses: (evidence && evidence.interests) || "(não informado)",
-    dificuldadesAnotadasPeloAdulto: (evidence && evidence.difficulties) || "(não informado)",
-    semana: {
-      sessoes: evidence && evidence.sessions,
-      minutos: evidence && evidence.minutes,
-      vozMedia: evidence && evidence.voiceAvg,
-      tentativasVoz: evidence && evidence.voiceCount
-    },
-    palavrasComDificuldade: (evidence && evidence.hardWords) || [],
-    trocasFaladas: (evidence && evidence.confusions) || [],
-    baralhos: (evidence && evidence.decks) || [],
-    frentesJaCadastradas: (evidence && evidence.existingFronts) || []
+const DEFAULT_SUGGEST_SYSTEM_PROMPT = [
+  "Variáveis (sem espaço). O app substitui na hora de pedir:",
+  "{{dificuldades}}  {{interesses}}  {{logs}}  {{skills}}  {{skill:NOME}}  {{frentes}}  {{baralhos}}",
+  "",
+  "{{dificuldades}}",
+  "",
+  "{{interesses}}",
+  "",
+  "{{logs}}",
+  "",
+  "{{skills}}",
+  "",
+  "{{frentes}}",
+  "",
+  "{{baralhos}}",
+  "",
+  "Escreva aqui as suas regras.",
+  "Responda somente JSON: {\"suggestions\":[{\"kind\":\"word\",\"front\":\"\",\"back\":\"\",\"reason\":\"\",\"basedOn\":[\"\"],\"deckHint\":\"\"}]}"
+].join("\n");
+
+function resolveSuggestSystemPrompt(raw) {
+  let text = String(raw || "").trim();
+  return text || DEFAULT_SUGGEST_SYSTEM_PROMPT;
+}
+
+function skillSlug(name) {
+  return normalizeStr(name).replace(/\s+/g, "-");
+}
+
+function normalizeSuggestSkills(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(s => s && String(s.name || "").trim() && String(s.text || "").trim()).map(s => ({
+    id: s.id || skillSlug(s.name),
+    name: String(s.name).trim(),
+    text: String(s.text).trim(),
+    enabled: s.enabled !== !1
+  }));
+}
+
+function formatSuggestLogs(evidence) {
+  let ev = evidence || {};
+  let lines = [];
+  (ev.hardWords || []).forEach(w => {
+    lines.push((w.word || "") + " ×" + (w.count || 1) + (w.lastReason ? " (" + w.lastReason + ")" : ""));
+  });
+  (ev.confusions || []).slice(0, 12).forEach(c => {
+    lines.push((c.expected || "") + " → " + (c.spoken || "") + " (" + (c.accuracy || 0) + "%)");
+  });
+  return lines.length ? lines.join("\n") : "(ainda sem erros gravados nos estudos)";
+}
+
+function buildSuggestPromptVars(evidence, skills) {
+  let ev = evidence || {};
+  let list = normalizeSuggestSkills(skills);
+  let skillMap = {};
+  list.forEach(s => { skillMap[skillSlug(s.name)] = s.text; });
+  let active = list.filter(s => s.enabled);
+  return {
+    dificuldades: ev.difficulties || "(não informado)",
+    interesses: ev.interests || "(não informado)",
+    logs: formatSuggestLogs(ev),
+    skills: active.length ? active.map(s => "[" + s.name + "]\n" + s.text).join("\n\n") : "(nenhuma skill ativa)",
+    frentes: (ev.existingFronts || []).join(", ") || "(nenhuma)",
+    baralhos: ((ev.decks || []).map(d => d.name).filter(Boolean).join(", ")) || "(nenhum)",
+    skillMap
   };
+}
+
+function interpolateSuggestPrompt(template, vars) {
+  let text = String(template || "");
+  let map = vars && vars.skillMap || {};
+  text = text.replace(/\{\{skill:([^}]+)\}\}/gi, (_, name) => {
+    let slug = skillSlug(name);
+    return map[slug] || "(skill \"" + String(name).trim() + "\" não cadastrada)";
+  });
+  ["dificuldades", "interesses", "logs", "skills", "frentes", "baralhos"].forEach(key => {
+    text = text.split("{{" + key + "}}").join(vars && vars[key] != null ? String(vars[key]) : "");
+  });
+  return text;
+}
+
+function buildContentSuggestUserMessage(evidence) {
+  let ev = evidence || {};
   return [
-    "Você é um professor de alfabetização em português do Brasil.",
-    "Sugira fichas de leitura para UMA criança. A frente é o que ela lê; o verso é apoio para o adulto.",
-    "REGRAS:",
-    "1. Use APENAS os dados reais abaixo. Não invente diagnóstico, sessão ou erro que não esteja listado.",
-    "2. Não repita nenhuma frente já cadastrada.",
-    "3. Priorize nesta ordem: (a) reusar palavras que ela errou em frase ou texto novo; (b) pares mínimos das trocas faladas (ex.: BOLA/BOTA); (c) vocabulário dos interesses só se isso ajudar a praticar a dificuldade anotada.",
-    "4. Tipos: word = 1 palavra em MAIÚSCULAS; phrase = 1 frase curta; text = 2 a 4 frases simples.",
-    "5. Devolva de 8 a 10 itens, misturando word, phrase e text.",
-    "6. reason deve citar o dado real (palavra, porcentagem, troca falada, interesse ou dificuldade anotada).",
-    "7. Responda SOMENTE JSON no formato {\"suggestions\":[{\"kind\":\"word|phrase|text\",\"front\":\"\",\"back\":\"\",\"reason\":\"\",\"basedOn\":[\"\"],\"deckHint\":\"\"}]}",
+    "dificuldades:",
+    ev.difficulties || "",
     "",
-    "DADOS REAIS:",
-    JSON.stringify(data)
+    "interesses:",
+    ev.interests || "",
+    "",
+    "logs:",
+    formatSuggestLogs(ev),
+    "",
+    "frentes:",
+    (ev.existingFronts || []).join(", "),
+    "",
+    "baralhos:",
+    ((ev.decks || []).map(d => d.name).filter(Boolean).join(", "))
   ].join("\n");
+}
+
+function buildContentSuggestPrompt(evidence, systemPrompt, skills) {
+  let vars = buildSuggestPromptVars(evidence, skills);
+  return interpolateSuggestPrompt(resolveSuggestSystemPrompt(systemPrompt), vars) + "\n\n" + buildContentSuggestUserMessage(evidence);
 }
 
 const CONTENT_SUGGEST_SCHEMA = {
@@ -1021,22 +1116,23 @@ const CONTENT_SUGGEST_SCHEMA = {
           basedOn: { type: "ARRAY", items: { type: "STRING" } },
           deckHint: { type: "STRING" }
         },
-        required: ["kind", "front", "reason"]
+        required: ["kind", "front", "back", "reason"]
       }
     }
   },
   required: ["suggestions"]
 };
 
-async function suggestContentWithGemini(prompt, apiKey, modelName) {
+async function suggestContentWithGemini(userMessage, apiKey, modelName, systemPrompt) {
   let model = (modelName || "gemini-2.0-flash").trim();
   let response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      systemInstruction: { parts: [{ text: resolveSuggestSystemPrompt(systemPrompt) }] },
+      contents: [{ parts: [{ text: userMessage }] }],
       generationConfig: {
-        temperature: 0.4,
+        temperature: 0.3,
         responseMimeType: "application/json",
         responseSchema: CONTENT_SUGGEST_SCHEMA
       }
@@ -1051,7 +1147,7 @@ async function suggestContentWithGemini(prompt, apiKey, modelName) {
   return parseJsonLoose(text);
 }
 
-async function suggestContentWithOpenAI(prompt, apiKey) {
+async function suggestContentWithOpenAI(userMessage, apiKey, systemPrompt) {
   let response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1060,11 +1156,11 @@ async function suggestContentWithOpenAI(prompt, apiKey) {
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.3,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "Responda somente JSON válido com a chave suggestions." },
-        { role: "user", content: prompt }
+        { role: "system", content: resolveSuggestSystemPrompt(systemPrompt) },
+        { role: "user", content: userMessage }
       ]
     })
   });
@@ -1086,10 +1182,12 @@ async function requestContentSuggestions({ history, cards, decks, aiCfg, nowMs }
   }
   let backend = pickContentSuggestBackend(aiCfg);
   if (!backend) throw new Error("Configure uma chave Gemini ou OpenAI na aba IA.");
-  let prompt = buildContentSuggestPrompt(evidence);
+  let vars = buildSuggestPromptVars(evidence, aiCfg && aiCfg.suggestSkills);
+  let systemPrompt = interpolateSuggestPrompt(resolveSuggestSystemPrompt(aiCfg && aiCfg.suggestSystemPrompt), vars);
+  let userMessage = buildContentSuggestUserMessage(evidence);
   let raw = backend === "openai"
-    ? await suggestContentWithOpenAI(prompt, aiCfg.openaiKey)
-    : await suggestContentWithGemini(prompt, aiCfg.geminiKey, aiCfg.geminiModel);
+    ? await suggestContentWithOpenAI(userMessage, aiCfg.openaiKey, systemPrompt)
+    : await suggestContentWithGemini(userMessage, aiCfg.geminiKey, aiCfg.geminiModel, systemPrompt);
   let items = parseContentSuggestions(raw, evidence.existingFronts);
   if (!items.length) throw new Error("A IA não devolveu fichas novas. Revise o perfil ou tente depois de mais estudos.");
   return { backend, evidence, items };

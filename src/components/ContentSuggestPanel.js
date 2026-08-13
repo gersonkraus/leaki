@@ -1,6 +1,11 @@
 function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCards }) {
   let [interests, setInterests] = (0, c.useState)(aiCfg?.learnerInterests || "");
   let [difficulties, setDifficulties] = (0, c.useState)(aiCfg?.learnerDifficulties || "");
+  let [systemPrompt, setSystemPrompt] = (0, c.useState)(aiCfg?.suggestSystemPrompt || DEFAULT_SUGGEST_SYSTEM_PROMPT);
+  let [showPrompt, setShowPrompt] = (0, c.useState)(!1);
+  let [skills, setSkills] = (0, c.useState)(() => normalizeSuggestSkills(aiCfg?.suggestSkills || []));
+  let [skillName, setSkillName] = (0, c.useState)("");
+  let [skillText, setSkillText] = (0, c.useState)("");
   let [inbox, setInbox] = (0, c.useState)(() => pruneContentInbox(aiCfg?.contentInbox || []));
   let [busy, setBusy] = (0, c.useState)(!1);
   let [msg, setMsg] = (0, c.useState)(null);
@@ -22,7 +27,9 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
     if (onSaveAI) {
       onSaveAI({
         learnerInterests: interests.trim(),
-        learnerDifficulties: difficulties.trim()
+        learnerDifficulties: difficulties.trim(),
+        suggestSystemPrompt: systemPrompt,
+        suggestSkills: skills
       });
     }
     setMsg("Perfil do aluno salvo.");
@@ -39,7 +46,9 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
       if (onSaveAI) {
         await onSaveAI({
           learnerInterests: interests.trim(),
-          learnerDifficulties: difficulties.trim()
+          learnerDifficulties: difficulties.trim(),
+          suggestSystemPrompt: systemPrompt,
+          suggestSkills: skills
         });
       }
       let result = await requestContentSuggestions({
@@ -48,7 +57,9 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
         decks,
         aiCfg: Object.assign({}, aiCfg, {
           learnerInterests: interests.trim(),
-          learnerDifficulties: difficulties.trim()
+          learnerDifficulties: difficulties.trim(),
+          suggestSystemPrompt: systemPrompt,
+          suggestSkills: skills
         })
       });
       let stamped = result.items.map(item => Object.assign({
@@ -102,7 +113,7 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
           (0, u.jsxs)("div", {
             children: [
               (0, u.jsx)("h4", { className: "font-display font-medium text-white", children: "Perfil do aluno" }),
-              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "A IA só usa o que você escrever aqui e os logs reais de estudo. Ela não cria ficha sozinha." })
+              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: "Dificuldade, interesses e logs entram no prompt pelas variáveis {{dificuldades}}, {{interesses}} e {{logs}}." })
             ]
           }),
           (0, u.jsxs)("label", {
@@ -131,25 +142,133 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
               })
             ]
           }),
+          (0, u.jsxs)("div", {
+            className: "space-y-1",
+            children: [
+              (0, u.jsxs)("div", {
+                className: "flex items-center justify-between gap-2",
+                children: [
+                  (0, u.jsx)("span", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Prompt do sistema" }),
+                  (0, u.jsxs)("div", {
+                    className: "flex gap-2",
+                    children: [
+                      (0, u.jsx)("button", {
+                        type: "button",
+                        onClick: () => setShowPrompt(v => !v),
+                        className: "font-mono text-[10px] text-violet-light",
+                        children: showPrompt ? "Ocultar" : "Mostrar e editar"
+                      }),
+                      (0, u.jsx)("button", {
+                        type: "button",
+                        onClick: () => setSystemPrompt(DEFAULT_SUGGEST_SYSTEM_PROMPT),
+                        className: "font-mono text-[10px] text-ink-soft",
+                        children: "Restaurar padrão"
+                      })
+                    ]
+                  })
+                ]
+              }),
+              showPrompt ? (0, u.jsxs)("div", {
+                className: "space-y-2",
+                children: [
+                  (0, u.jsx)("p", { className: "text-[11px] text-ink-soft font-mono", children: "{{dificuldades}} {{interesses}} {{logs}} {{skills}} {{skill:NOME}} {{frentes}} {{baralhos}}" }),
+                  (0, u.jsx)("textarea", {
+                    value: systemPrompt,
+                    onChange: ev => setSystemPrompt(ev.target.value),
+                    rows: 16,
+                    spellCheck: !1,
+                    className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-[11px] font-mono outline-none focus:border-violet transition-colors resize-y text-white min-h-[12rem]"
+                  }),
+                  (0, u.jsx)("pre", {
+                    className: "text-[10px] text-ink-soft font-mono whitespace-pre-wrap break-words p-2 rounded-xl bg-base-raised/60 max-h-40 overflow-y-auto",
+                    children: interpolateSuggestPrompt(systemPrompt, buildSuggestPromptVars(evidence, skills))
+                  })
+                ]
+              }) : (0, u.jsx)("p", { className: "text-[11px] text-ink-soft", children: "O texto do sistema recebe os dados pelas variáveis. Abra para editar e ver o preview preenchido." })
+            ]
+          }),
+          (0, u.jsxs)("div", {
+            className: "space-y-2 pt-2 border-t border-base-line",
+            children: [
+              (0, u.jsx)("p", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "Skills" }),
+              (0, u.jsx)("p", { className: "text-[11px] text-ink-soft", children: "Cadastre um bloco e chame no prompt com {{skills}} (todas as ativas) ou {{skill:nome}}." }),
+              skills.map(sk => (0, u.jsxs)("div", {
+                className: "flex items-start gap-2 p-2 rounded-xl bg-base-raised/70 border border-base-line",
+                children: [
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: () => setSkills(skills.map(s => s.id === sk.id ? Object.assign({}, s, { enabled: !s.enabled }) : s)),
+                    className: "font-mono text-[10px] mt-0.5 " + (sk.enabled ? "text-teal" : "text-ink-soft"),
+                    children: sk.enabled ? "ativa" : "off"
+                  }),
+                  (0, u.jsxs)("div", {
+                    className: "min-w-0 flex-1",
+                    children: [
+                      (0, u.jsx)("p", { className: "text-xs text-white font-medium", children: sk.name }),
+                      (0, u.jsx)("p", { className: "text-[10px] text-ink-soft font-mono", children: "{{skill:" + skillSlug(sk.name) + "}}" }),
+                      (0, u.jsx)("p", { className: "text-[11px] text-ink-soft break-words", children: sk.text })
+                    ]
+                  }),
+                  (0, u.jsx)("button", {
+                    type: "button",
+                    onClick: () => setSkills(skills.filter(s => s.id !== sk.id)),
+                    className: "font-mono text-[10px] text-coral",
+                    children: "apagar"
+                  })
+                ]
+              }, sk.id)),
+              (0, u.jsx)("input", {
+                value: skillName,
+                onChange: ev => setSkillName(ev.target.value),
+                placeholder: "Nome da skill (ex.: verso-igual)",
+                className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-violet"
+              }),
+              (0, u.jsx)("textarea", {
+                value: skillText,
+                onChange: ev => setSkillText(ev.target.value),
+                rows: 2,
+                placeholder: "Instrução da skill (ex.: o verso deve copiar a frente)",
+                className: "w-full bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-violet resize-none"
+              }),
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => {
+                  if (!skillName.trim() || !skillText.trim()) return;
+                  setSkills(skills.concat([{
+                    id: skillSlug(skillName) + "-" + Date.now().toString(16),
+                    name: skillName.trim(),
+                    text: skillText.trim(),
+                    enabled: !0
+                  }]));
+                  setSkillName("");
+                  setSkillText("");
+                },
+                className: "font-body text-xs rounded-full px-3 py-1.5 bg-base-raised text-white",
+                children: "Adicionar skill"
+              })
+            ]
+          }),
           (0, u.jsx)("button", {
             type: "button",
             onClick: handleSaveProfile,
             className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-base-raised text-white hover:bg-base-strong transition-colors",
-            children: "Salvar perfil"
+            children: "Salvar perfil, prompt e skills"
           })
         ]
       }),
       (0, u.jsxs)("div", {
         className: "p-4 rounded-xl bg-violet-dim border border-violet/40 space-y-2",
         children: [
-          (0, u.jsx)("p", { className: "font-display font-medium text-white", children: "O que os logs mostram" }),
-          (0, u.jsxs)("p", { className: "text-sm text-ink-soft", children: [evidence.sessions, " sessões na semana · voz ", evidence.voiceAvg === null ? "sem dados" : evidence.voiceAvg + "%"] }),
+          (0, u.jsx)("p", { className: "font-display font-medium text-white", children: "Registros que a IA vai ler" }),
+          (0, u.jsxs)("p", { className: "text-sm text-white", children: ["Dificuldade: ", evidence.difficulties || "ainda não anotada"] }),
+          (0, u.jsxs)("p", { className: "text-sm text-ink-soft", children: ["Interesses: ", evidence.interests || "ainda não anotados"] }),
+          (0, u.jsxs)("p", { className: "text-sm text-ink-soft", children: [evidence.sessionsAll || 0, " sessões no aparelho · ", evidence.sessions, " nesta semana · voz ", evidence.voiceAvg === null ? "sem dados" : evidence.voiceAvg + "%"] }),
           evidence.hardWords.length
-            ? (0, u.jsxs)("p", { className: "text-sm text-white", children: ["Travou em: ", evidence.hardWords.map(w => w.word).join(", ")] })
-            : (0, u.jsx)("p", { className: "text-sm text-ink-soft", children: "Ainda não há palavras marcadas como difíceis nesta semana." }),
+            ? (0, u.jsxs)("p", { className: "text-sm text-white", children: ["Travou em (todas as sessões): ", evidence.hardWords.map(w => w.word + " ×" + w.count).join(", ")] })
+            : (0, u.jsx)("p", { className: "text-sm text-ink-soft", children: "Ainda não há palavras marcadas como difíceis nos logs." }),
           evidence.confusions.length
-            ? (0, u.jsx)("p", { className: "text-xs text-ink-soft", children: "Trocas recentes: " + evidence.confusions.slice(0, 5).map(x => x.expected + " → " + x.spoken + " (" + x.accuracy + "%)").join(" · ") })
-            : null
+            ? (0, u.jsx)("p", { className: "text-xs text-ink-soft", children: "Trocas gravadas: " + evidence.confusions.slice(0, 8).map(x => x.expected + " → " + x.spoken + " (" + x.accuracy + "%)").join(" · ") })
+            : (0, u.jsx)("p", { className: "text-xs text-ink-soft", children: "Nenhuma troca de voz gravada ainda. A IA vai se apoiar na dificuldade que você escreveu." })
         ]
       }),
       (0, u.jsxs)("div", {
@@ -158,7 +277,7 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
           (0, u.jsxs)("div", {
             children: [
               (0, u.jsx)("h4", { className: "font-display font-medium text-white", children: "Lista da IA" }),
-              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: backend ? "A IA monta palavras, frases e textos curtos. Você escolhe o baralho e libera uma a uma." : "Configure Gemini ou OpenAI na aba IA para pedir a lista." })
+              (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: backend ? "A lista segue o prompt preenchido (dificuldade, interesses, logs, skills). Você libera uma a uma." : "Configure Gemini ou OpenAI na aba IA para pedir a lista." })
             ]
           }),
           (0, u.jsx)("button", {

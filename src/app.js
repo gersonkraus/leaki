@@ -383,7 +383,8 @@ document.head.appendChild(eg);
             })
           }),
           kStats && (0, u.jsx)(ef, {
-            title: "Painel dos Pais · Relatório & IA",
+            title: "Painel dos pais",
+            wide: !0,
             onClose: () => setKStats(!1),
             children: (0, u.jsx)(eParentStats, {
               history: history,
