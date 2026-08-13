@@ -1,4 +1,4 @@
-function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n, syncCfg, onSaveSync, onSyncNow, syncBusy, learners, activeLearnerId, learnerReports, onSwitchLearner, onAddLearner, onRenameLearner }) {
+function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettings: aiCfg, onSaveAISettings: onSaveAI, onApproveCards, onClearHistory: t, onClose: n, syncCfg, onSaveSync, onSyncNow, syncBusy, learners, activeLearnerId, learnerReports, onSwitchLearner, onAddLearner, onRenameLearner, onRemoveLearner }) {
   let [activeTab, setActiveTab] = (0, c.useState)("stats"),
     [reportScope, setReportScope] = (0, c.useState)("active"),
     [geminiKey, setGeminiKey] = (0, c.useState)(aiCfg?.geminiKey || ""),
@@ -19,6 +19,7 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
     i = a > 0 ? Math.round((l / a) * 100) : 0,
     digest = buildParentDigest(sessions, view.cards || []);
   let learnerList = learners || [];
+  let [learnerModal, setLearnerModal] = (0, c.useState)(null);
 
   (0, c.useEffect)(() => {
     function loadVoices() {
@@ -81,21 +82,42 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
         role: "tablist",
         "aria-label": "Crianças",
         children: [
-          learnerList.map(item => (0, u.jsx)("button", {
-            type: "button",
-            role: "tab",
-            "aria-selected": item.id === activeLearnerId,
-            onClick: () => onSwitchLearner && onSwitchLearner(item.id),
-            className: "learner-chip" + (item.id === activeLearnerId ? " is-active" : ""),
-            children: item.name
-          }, item.id)),
+          learnerList.map(item => {
+            let active = item.id === activeLearnerId;
+            if (!active) return (0, u.jsx)("button", {
+              type: "button",
+              role: "tab",
+              "aria-selected": !1,
+              onClick: () => onSwitchLearner && onSwitchLearner(item.id),
+              className: "learner-chip",
+              children: item.name
+            }, item.id);
+            return (0, u.jsxs)("div", {
+              className: "learner-chip-group is-active",
+              role: "group",
+              "aria-label": item.name,
+              children: [
+                (0, u.jsx)("button", {
+                  type: "button",
+                  role: "tab",
+                  "aria-selected": !0,
+                  className: "learner-chip-name",
+                  children: item.name
+                }),
+                (0, u.jsx)("button", {
+                  type: "button",
+                  className: "learner-chip-edit",
+                  "aria-label": "Editar " + item.name,
+                  onClick: () => setLearnerModal({ mode: "edit", learner: item }),
+                  children: "Editar"
+                })
+              ]
+            }, item.id);
+          }),
           (0, u.jsx)("button", {
             type: "button",
-            onClick: () => {
-              let name = typeof prompt === "function" ? prompt("Nome da criança", nextLearnerName(learnerList)) : "";
-              if (name && onAddLearner) onAddLearner(name);
-            },
-            className: "learner-chip",
+            onClick: () => setLearnerModal({ mode: "add" }),
+            className: "learner-chip learner-chip-add",
             children: "+ Nova criança"
           })
         ]
@@ -296,7 +318,9 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
         activeLearnerId: activeLearnerId,
         onSwitchLearner: onSwitchLearner,
         onAddLearner: onAddLearner,
-        onRenameLearner: onRenameLearner
+        onRenameLearner: onRenameLearner,
+        onRemoveLearner: onRemoveLearner,
+        onOpenLearnerModal: setLearnerModal
       });
         if ("suggest" === activeTab) return (0, u.jsx)(eContentSuggest, {
         history: e,
@@ -566,7 +590,26 @@ function eParentStats({ history: e, cards: cardsList, decks: decksList, aiSettin
       })()
       })
         ]
-      })
+      }),
+      learnerModal ? (0, u.jsx)(eLearnerFormModal, {
+        mode: learnerModal.mode,
+        learner: learnerModal.learner || null,
+        defaultName: learnerModal.mode === "add" ? nextLearnerName(learnerList) : "",
+        canDelete: !!(learnerModal.learner && learnerList.length > 1),
+        onClose: () => setLearnerModal(null),
+        onSave: name => {
+          if (learnerModal.mode === "add") {
+            if (onAddLearner) onAddLearner(name);
+          } else if (learnerModal.learner && onRenameLearner) {
+            onRenameLearner(learnerModal.learner.id, name);
+          }
+          setLearnerModal(null);
+        },
+        onDelete: () => {
+          if (learnerModal.learner && onRemoveLearner) onRemoveLearner(learnerModal.learner.id);
+          setLearnerModal(null);
+        }
+      }) : null
     ]
   });
 }

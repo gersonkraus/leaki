@@ -1556,6 +1556,23 @@ function renameLearnerInState(state, id, name) {
   };
 }
 
+function removeLearnerFromState(state, id) {
+  if (!state || !id) return { state, removed: null, switched: !1, error: "missing" };
+  let learners = (state.learners || []).slice();
+  if (learners.length <= 1) return { state, removed: null, switched: !1, error: "last" };
+  let removed = learners.find(item => item.id === id) || null;
+  if (!removed) return { state, removed: null, switched: !1, error: "missing" };
+  let nextLearners = learners.filter(item => item.id !== id);
+  let switched = state.activeId === id;
+  let activeId = switched ? nextLearners[0].id : state.activeId;
+  return {
+    state: { version: 1, activeId, learners: nextLearners },
+    removed,
+    switched,
+    error: ""
+  };
+}
+
 function syncLearnerMeta(state, learnerId, syncCfg) {
   if (!state || !learnerId) return state;
   let cfg = Object.assign({}, defaultSyncConfig(), syncCfg || {});

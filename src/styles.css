@@ -33,6 +33,7 @@
 .speak-btn:active{transform:scale(.96);background:#2c2e34}
 
 .sheet-overlay,.admin-overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.72);display:flex;justify-content:center;padding:.75rem;overflow:hidden}
+.sheet-overlay.is-nested,.admin-overlay.is-nested{z-index:70}
 .sheet-overlay{align-items:flex-end}
 .admin-overlay{align-items:stretch}
 .sheet-dialog,.admin-dialog{display:flex;flex-direction:column;min-height:0;width:100%;background:#1a1b1f;border:1px solid #2c2e34;overflow:hidden}
@@ -43,9 +44,20 @@
 .sheet-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:1.25rem}
 .admin-shell{display:flex;flex-direction:column;flex:1;min-height:0}
 .learner-bar{display:flex;flex-wrap:wrap;gap:.4rem;padding:.5rem .75rem;border-bottom:1px solid #2c2e34;flex-shrink:0}
-.learner-chip{border:1px solid #2c2e34;background:#212227;color:#9a9ba5;border-radius:999px;padding:.35rem .75rem;font-size:.75rem;min-height:2.25rem;font-family:IBM Plex Sans,sans-serif}
+.learner-chip{border:1px solid #2c2e34;background:#212227;color:#9a9ba5;border-radius:999px;padding:.35rem .75rem;font-size:.75rem;min-height:2.75rem;font-family:IBM Plex Sans,sans-serif}
 .learner-chip:hover,.learner-chip:focus-visible{color:#fff;outline:2px solid #6e56cf;outline-offset:2px}
 .learner-chip.is-active{background:#6e56cf29;color:#fff;border-color:#6e56cf66}
+.learner-chip-add{border-style:dashed}
+.learner-chip-group{display:inline-flex;align-items:stretch;border:1px solid #2c2e34;background:#212227;border-radius:999px;min-height:2.75rem;overflow:hidden}
+.learner-chip-group.is-active{background:#6e56cf29;border-color:#6e56cf66}
+.learner-chip-name,.learner-chip-edit{border:0;background:transparent;color:#9a9ba5;font-family:IBM Plex Sans,sans-serif;font-size:.75rem;min-height:2.75rem}
+.learner-chip-name{padding:.35rem .7rem .35rem .9rem;color:inherit}
+.learner-chip-edit{padding:.35rem .85rem;min-width:2.75rem;border-left:1px solid #6e56cf66;color:#fff;font-weight:500}
+.learner-chip-group.is-active .learner-chip-name,.learner-chip-group.is-active .learner-chip-edit{color:#fff}
+.learner-chip-name:hover,.learner-chip-name:focus-visible,.learner-chip-edit:hover,.learner-chip-edit:focus-visible{color:#fff;outline:2px solid #6e56cf;outline-offset:-2px}
+.learner-name-field{width:100%;min-height:3.5rem;font-family:Space Grotesk,sans-serif;font-size:clamp(1.35rem,6vw,1.75rem);font-weight:600;color:#fff;background:#111114;border:1px solid #2c2e34;border-radius:.75rem;padding:.75rem 1rem;outline:none}
+.learner-name-field::placeholder{color:#9a9ba5;font-weight:500}
+.learner-name-field:focus{border-color:#6e56cf;outline:2px solid #6e56cf;outline-offset:2px}
 .admin-layout{display:flex;flex-direction:column;flex:1;min-height:0}
 .admin-nav{display:flex;flex-direction:row;gap:.25rem;padding:.5rem;overflow-x:auto;flex-shrink:0;border-bottom:1px solid #2c2e34;-webkit-overflow-scrolling:touch}
 .admin-nav-btn{flex-shrink:0;border:1px solid transparent;background:transparent;color:#9a9ba5;font-family:IBM Plex Sans,sans-serif;font-size:.75rem;font-weight:500;border-radius:.75rem;padding:.5rem .75rem;min-height:2.5rem}

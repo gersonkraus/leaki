@@ -1,4 +1,4 @@
-function eSyncPanel({ syncCfg, onSaveSync, onSyncNow, busy, learners, activeLearnerId, onSwitchLearner, onAddLearner, onRenameLearner }) {
+function eSyncPanel({ syncCfg, onSaveSync, onSyncNow, busy, learners, activeLearnerId, onSwitchLearner, onAddLearner, onRenameLearner, onRemoveLearner, onOpenLearnerModal }) {
   let cfg = syncCfg || defaultSyncConfig();
   let [keyDraft, setKeyDraft] = (0, c.useState)(cfg.pairKey || "");
   let [urlDraft, setUrlDraft] = (0, c.useState)(cfg.syncUrl || DEFAULT_SYNC_HOST);
@@ -44,24 +44,25 @@ function eSyncPanel({ syncCfg, onSaveSync, onSyncNow, busy, learners, activeLear
                 className: "learner-chip" + (item.id === activeLearnerId ? " is-active" : ""),
                 children: item.id === activeLearnerId ? "ativa" : "abrir"
               }),
-              (0, u.jsx)("input", {
-                defaultValue: item.name,
-                key: item.id + ":" + item.name,
-                onBlur: ev => onRenameLearner && onRenameLearner(item.id, ev.target.value),
-                className: "flex-1 min-w-[8rem] bg-base-surface border border-base-line rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-violet"
+              (0, u.jsx)("p", {
+                className: "flex-1 min-w-[8rem] font-display font-medium text-sm text-white truncate",
+                children: item.name
               }),
               (0, u.jsx)("span", {
                 className: "font-mono text-[10px] text-ink-soft truncate max-w-[10rem]",
                 children: item.pairKey || "sem chave"
+              }),
+              (0, u.jsx)("button", {
+                type: "button",
+                onClick: () => onOpenLearnerModal && onOpenLearnerModal({ mode: "edit", learner: item }),
+                className: "tap-min font-body text-xs font-medium rounded-full px-3 py-1.5 bg-base-surface text-white",
+                children: "Editar"
               })
             ]
           }, item.id)),
           (0, u.jsx)("button", {
             type: "button",
-            onClick: () => {
-              let name = typeof prompt === "function" ? prompt("Nome da criança", nextLearnerName(list)) : "";
-              if (name && onAddLearner) onAddLearner(name);
-            },
+            onClick: () => onOpenLearnerModal ? onOpenLearnerModal({ mode: "add" }) : (onAddLearner && onAddLearner(nextLearnerName(list))),
             className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-base-raised text-white",
             children: "Nova criança"
           })

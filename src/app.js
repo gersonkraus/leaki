@@ -272,6 +272,36 @@ document.head.appendChild(eg);
         setLearnersState(prev => renameLearnerInState(prev, id, name));
       }
 
+      function handleRemoveLearner(id) {
+        let result = removeLearnerFromState(learnersState, id);
+        if (!result.removed) return;
+        skipPushRef.current = !0;
+        let fromId = activeLearnerRef.current;
+        let nextBundles;
+        if (result.switched) {
+          let switched = applyLearnerSwitch(learnerBundlesRef.current, fromId, currentLearnerBundle(), result.state.activeId);
+          activeLearnerRef.current = result.state.activeId;
+          nextBundles = Object.assign({}, switched.bundles);
+          delete nextBundles[id];
+          setLearnerBundles(nextBundles);
+          applyLearnerBundle(switched.bundle);
+          et(learnerDataKey(result.state.activeId), Object.assign({}, switched.bundle, { aiSettings: persistableAISettings(switched.bundle.aiSettings) }));
+        } else {
+          nextBundles = Object.assign({}, learnerBundlesRef.current);
+          if (fromId) nextBundles[fromId] = snapshotLearnerBundle(currentLearnerBundle());
+          delete nextBundles[id];
+          setLearnerBundles(nextBundles);
+        }
+        setLearnersState(result.state);
+        try {
+          if (window.storage && typeof window.storage.delete === "function") window.storage.delete(learnerDataKey(id));
+        } catch (err) {}
+        setTimeout(() => {
+          skipPushRef.current = !1;
+          runSync("switch");
+        }, 500);
+      }
+
       function handleSaveSessionStats(record) {
         setHistory(prev => [...prev, record]);
       }
@@ -537,7 +567,8 @@ document.head.appendChild(eg);
               }),
               onSwitchLearner: handleSwitchLearner,
               onAddLearner: handleAddLearner,
-              onRenameLearner: handleRenameLearner
+              onRenameLearner: handleRenameLearner,
+              onRemoveLearner: handleRemoveLearner
             })
           })
         ]

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("../src/utils.js", import.meta.url), "utf8");
 const api = new Function(
   src +
-    "\nreturn { migrateLearnersState, applyLearnerSwitch, snapshotLearnerBundle, emptyLearnerBundle, sharedParentSecrets, makeNewLearnerBundle, combineLearnerReports, selectReportView, addLearnerToState, renameLearnerInState, learnerDataKey, LEARNERS_KEY, nextLearnerName, generatePairKey, isValidPairKey };"
+    "\nreturn { migrateLearnersState, applyLearnerSwitch, snapshotLearnerBundle, emptyLearnerBundle, sharedParentSecrets, makeNewLearnerBundle, combineLearnerReports, selectReportView, addLearnerToState, renameLearnerInState, removeLearnerFromState, learnerDataKey, LEARNERS_KEY, nextLearnerName, generatePairKey, isValidPairKey };"
 )();
 
 const {
@@ -18,6 +18,7 @@ const {
   selectReportView,
   addLearnerToState,
   renameLearnerInState,
+  removeLearnerFromState,
   learnerDataKey,
   LEARNERS_KEY,
   nextLearnerName,
@@ -154,18 +155,50 @@ assert.equal(nextLearnerName(added.state.learners), "Criança 3");
 
 const renamed = renameLearnerInState(added.state, added.learner.id, "  João Pedro  ");
 assert.equal(renamed.learners.find((l) => l.id === added.learner.id).name, "João Pedro");
+
+const deleted = removeLearnerFromState(renamed, added.learner.id);
+assert.equal(deleted.removed.id, added.learner.id);
+assert.equal(deleted.state.learners.length, 1);
+assert.equal(deleted.state.learners[0].id, fresh.learners[0].id);
+assert.equal(deleted.switched, false);
+
+const twoKids = addLearnerToState(fresh, { name: "Bia", id: "lrn-bia" });
+const switchedDelete = removeLearnerFromState(
+  { version: 1, activeId: "lrn-bia", learners: twoKids.state.learners },
+  "lrn-bia",
+);
+assert.equal(switchedDelete.switched, true);
+assert.equal(switchedDelete.state.activeId, fresh.learners[0].id);
+assert.equal(switchedDelete.state.learners.length, 1);
+
+const lastBlocked = removeLearnerFromState(fresh, fresh.learners[0].id);
+assert.equal(lastBlocked.removed, null);
+assert.equal(lastBlocked.state.learners.length, 1);
+
 assert.equal(learnerDataKey("lrn-a"), "leaki:learner-data:lrn-a");
 assert.equal(LEARNERS_KEY, "leaki:learners");
 
 const panel = readFileSync(new URL("../src/components/StatsPanel.js", import.meta.url), "utf8");
 assert.match(panel, /Todas as crianças|reportScope/);
 assert.match(panel, /Nova criança|onAddLearner|learners/);
+assert.match(panel, /eLearnerForm|Editar|onRemoveLearner/);
+assert.match(panel, /learner-chip-edit/);
+assert.doesNotMatch(panel, /prompt\(/);
 
 const syncPanel = readFileSync(new URL("../src/components/SyncPanel.js", import.meta.url), "utf8");
 assert.match(syncPanel, /Nova criança|onAddLearner/);
+assert.match(syncPanel, /onOpenLearnerModal|Editar/);
+assert.doesNotMatch(syncPanel, /prompt\(/);
+
+const form = readFileSync(new URL("../src/components/LearnerFormModal.js", import.meta.url), "utf8");
+assert.match(form, /Salvar nome/);
+assert.match(form, /Apagar criança/);
+assert.match(form, /saem só deste aparelho/);
+assert.match(form, /learner-name-field/);
 
 const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
 assert.match(app, /applyLearnerSwitch|switchLearner/);
 assert.match(app, /LEARNERS_KEY|leaki:learners/);
+assert.match(app, /handleRemoveLearner|removeLearnerFromState/);
 
 console.log("learners tests passed");
