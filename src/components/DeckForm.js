@@ -47,6 +47,9 @@ function ep({ initial: e, onSave: t, onCancel: n }) {
               }),
               (0, u.jsx)("button", {
                 type: "button",
+                role: "switch",
+                "aria-label": "Dica de áudio",
+                "aria-pressed": audioHint ? "true" : "false",
                 onClick: () => setAudioHint(e => !e),
                 className: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 " + (audioHint ? "bg-violet" : "bg-base-strong"),
                 children: (0, u.jsx)("span", {
@@ -66,6 +69,9 @@ function ep({ initial: e, onSave: t, onCancel: n }) {
               }),
               (0, u.jsx)("button", {
                 type: "button",
+                role: "switch",
+                "aria-label": "Pular gravação",
+                "aria-pressed": skipRec && !requireSpeech ? "true" : "false",
                 onClick: () => { if (!requireSpeech) setSkipRec(e => !e); },
                 className: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 " + (skipRec && !requireSpeech ? "bg-violet" : "bg-base-strong"),
                 children: (0, u.jsx)("span", {
@@ -85,6 +91,9 @@ function ep({ initial: e, onSave: t, onCancel: n }) {
               }),
               (0, u.jsx)("button", {
                 type: "button",
+                role: "switch",
+                "aria-label": "Falar para virar",
+                "aria-pressed": requireSpeech ? "true" : "false",
                 onClick: () => {
                   let next = !requireSpeech;
                   if (next) setSkipRec(!1);

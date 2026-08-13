@@ -21,7 +21,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     [isAnalyzingAI, setIsAnalyzingAI] = (0, c.useState)(!1),
     [voiceFeedback, setVoiceFeedback] = (0, c.useState)(null),
     [flipHint, setFlipHint] = (0, c.useState)(""),
-    [needMicInfo, setNeedMicInfo] = (0, c.useState)(!wasMicExplained()),
+    [needMicInfo, setNeedMicInfo] = (0, c.useState)(!1),
     recRef = (0, c.useRef)(null),
     mediaStreamRef = (0, c.useRef)(null),
     recordedAudioChunks = (0, c.useRef)([]);
@@ -193,15 +193,6 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     }
   }
 
-  let v = (0, c.useMemo)(() => {
-    if (!f) return {};
-    let e = {};
-    return ["again", "hard", "good", "easy"].forEach(t => {
-      let n;
-      e[t] = J((n = new Date, (G.repeat(Y(f), n)[K[t]].card.due.getTime() - n.getTime()) / 864e5));
-    }), e;
-  }, [f]);
-
   function b(t) {
     let now = Date.now();
     let flipMoment = h.current.flipTime || now;
@@ -288,13 +279,6 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
     }
   }
 
-  function x(e) {
-    if (!e || e < 60) return (e || 0) + "s";
-    let t = Math.floor(e / 60),
-      n = e % 60;
-    return t + "m " + (n < 10 ? "0" : "") + n + "s";
-  }
-
   if (m || !f) {
     let t = m || {
         durationSeconds: Math.round((Date.now() - p.current) / 1000),
@@ -305,82 +289,14 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
         avgTimePerCard: (Math.round((Date.now() - p.current) / 1000) / (h.current.total || 1)).toFixed(1),
         struggledCards: h.current.struggledList || [],
         voiceAttempts: h.current.voiceAttempts || []
-      },
-      n = t.avgTimePerCard && parseFloat(t.avgTimePerCard) < 3,
-      hasStruggles = t.struggledCards && t.struggledCards.length > 0,
-      hasVoice = t.voiceAttempts && t.voiceAttempts.length > 0;
+      };
 
     return (0, u.jsxs)("div", {
       className: "max-w-lg mx-auto px-4 sm:px-6 py-10 text-center animate-in fade-in-0 duration-300 min-h-screen flex flex-col justify-center items-center",
       children: [
         (0, u.jsx)("div", { className: "text-5xl mb-3", children: "🎉" }),
-        (0, u.jsx)("p", { className: "font-display font-semibold text-2xl sm:text-3xl text-white mb-1", children: "Sessão Concluída!" }),
-        (0, u.jsxs)("p", { className: "text-xs sm:text-sm text-ink-soft mb-6", children: ['Você terminou todas as fichas de "', e.name, '".'] }),
-        (0, u.jsxs)("div", {
-          className: "grid grid-cols-3 gap-2.5 sm:gap-3 w-full mb-6",
-          children: [
-            (0, u.jsxs)("div", {
-              className: "p-3.5 rounded-2xl bg-base-surface border border-base-line text-center",
-              children: [
-                (0, u.jsx)("p", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "⏱️ Tempo" }),
-                (0, u.jsx)("p", { className: "font-display font-semibold text-base sm:text-lg text-white mt-1", children: x(t.durationSeconds) })
-              ]
-            }),
-            (0, u.jsxs)("div", {
-              className: "p-3.5 rounded-2xl bg-base-surface border border-base-line text-center",
-              children: [
-                (0, u.jsx)("p", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "🎯 Leitura" }),
-                (0, u.jsxs)("p", { className: "font-display font-semibold text-base sm:text-lg text-teal mt-1", children: [t.accuracy, "%"] })
-              ]
-            }),
-            (0, u.jsxs)("div", {
-              className: "p-3.5 rounded-2xl bg-base-surface border border-base-line text-center",
-              children: [
-                (0, u.jsx)("p", { className: "font-mono text-[10px] uppercase text-ink-soft", children: "⚡ Ritmo" }),
-                (0, u.jsxs)("p", { className: "font-display font-semibold text-base sm:text-lg text-violet-light mt-1", children: [t.avgTimePerCard, "s"] })
-              ]
-            })
-          ]
-        }),
-        hasVoice ? (0, u.jsxs)("div", {
-          className: "w-full mb-6 p-4 rounded-2xl bg-base-surface border border-violet/40 text-left space-y-2",
-          children: [
-            (0, u.jsx)("p", { className: "font-display font-medium text-xs text-violet-light flex items-center gap-1.5", children: [(0, u.jsx)("span", { children: "🎙️" }), " Avaliação de Leitura de Voz realizada:"] }),
-            (0, u.jsx)("ul", {
-              className: "space-y-1.5 pl-1 font-mono text-xs text-ink-soft max-h-36 overflow-y-auto",
-              children: t.voiceAttempts.map((va, vaIdx) => (0, u.jsxs)("li", {
-                className: "flex items-center justify-between gap-2 border-b border-base-line/40 pb-1",
-                children: [
-                  (0, u.jsxs)("span", { children: [(0, u.jsx)("b", { className: "text-white", children: va.word }), ' ➔ "', va.spoken, '"'] }),
-                  (0, u.jsxs)("span", { className: "font-semibold " + (va.accuracy >= 80 ? "text-teal" : va.accuracy >= 50 ? "text-amber" : "text-coral"), children: [va.accuracy, "%"] })
-                ]
-              }, vaIdx))
-            })
-          ]
-        }) : null,
-        hasStruggles ? (0, u.jsxs)("div", {
-          className: "w-full mb-6 p-4 rounded-2xl bg-base-surface border border-base-line text-left space-y-2",
-          children: [
-            (0, u.jsx)("p", { className: "font-display font-medium text-xs text-amber flex items-center gap-1.5", children: [(0, u.jsx)("span", { children: "🔍" }), " Palavras para reforçar:"] }),
-            (0, u.jsx)("ul", {
-              className: "space-y-1 pl-1 font-mono text-xs text-ink-soft max-h-36 overflow-y-auto",
-              children: t.struggledCards.map((sc, scIdx) => (0, u.jsxs)("li", {
-                className: "flex items-center justify-between gap-2 border-b border-base-line/40 pb-1",
-                children: [
-                  (0, u.jsx)("span", { className: "text-white font-medium", children: sc.word }),
-                  (0, u.jsx)("span", { className: "text-[10px] text-ink-soft/80", children: sc.reason })
-                ]
-              }, scIdx))
-            })
-          ]
-        }) : null,
-        n ? (0, u.jsxs)("div", {
-          className: "w-full mb-6 p-3 rounded-2xl bg-amber-dim border border-amber/30 text-amber font-mono text-xs text-left flex items-start gap-2",
-          children: [
-            (0, u.jsx)("span", { children: "⚠️" }),
-            (0, u.jsx)("span", { children: "Sessão rápida (" + t.avgTimePerCard + "s por ficha). Leia com calma antes de virar!" })
-          ]
-        }) : null,
+        (0, u.jsx)("p", { className: "font-display font-semibold text-2xl sm:text-3xl text-white mb-1", children: "Muito bem!" }),
+        (0, u.jsxs)("p", { className: "text-base text-ink-soft mb-6", children: ["Você leu ", t.totalReviews || 0, " ", (t.totalReviews || 0) === 1 ? "palavra" : "palavras", ' em "', e.name, '".'] }),
         (0, u.jsx)("button", {
           onClick: a,
           className: "font-body text-sm font-semibold rounded-full bg-violet px-8 py-3.5 text-white hover:bg-violet-light shadow-[0_8px_24px_rgba(110,86,207,0.35)] transition-all",
@@ -438,6 +354,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
             children: [
               (0, u.jsxs)("div", {
                 className: "flip-face",
+                "aria-hidden": o || undefined,
                 children: [
                   (0, u.jsxs)("div", {
                     className: "w-full flex items-center justify-between",
@@ -461,6 +378,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
               }),
               (0, u.jsxs)("div", {
                 className: "flip-face flip-face-back",
+                "aria-hidden": !o || undefined,
                 children: [
                   (0, u.jsxs)("div", {
                     className: "w-full flex items-center justify-between",
@@ -491,8 +409,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
             className: "p-4 rounded-2xl border text-center font-body space-y-1 animate-in fade-in-0 " + (voiceFeedback.accuracy >= 80 ? "bg-teal-dim border-teal/40 text-teal" : voiceFeedback.accuracy >= 50 ? "bg-amber-dim border-amber/40 text-amber" : "bg-coral-dim border-coral/40 text-coral"),
             children: [
               (0, u.jsxs)("p", { className: "font-semibold text-base", children: [voiceFeedback.feedback, " (", voiceFeedback.accuracy, "%)"] }),
-              voiceFeedback.spokenText ? (0, u.jsxs)("p", { className: "text-sm opacity-90", children: ['Você falou: "', voiceFeedback.spokenText, '"'] }) : null,
-              speechVerdict ? (0, u.jsxs)("p", { className: "text-sm opacity-90", children: [speechVerdict.timeSec, "s para ler · volta em ", v[speechVerdict.rating] || (speechVerdict.rating === "again" ? "1m" : "depois")] }) : null
+              voiceFeedback.spokenText ? (0, u.jsxs)("p", { className: "text-sm opacity-90", children: ['Você falou: "', voiceFeedback.spokenText, '"'] }) : null
             ]
           }) : null,
           !o ? (0, u.jsxs)("div", {
@@ -501,7 +418,7 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
               needMicInfo ? (0, u.jsxs)("div", {
                 className: "p-4 rounded-2xl bg-base-raised border border-base-line space-y-3",
                 children: [
-                  (0, u.jsx)("p", { className: "font-body text-sm text-white", children: "Vamos ouvir você ler em voz alta. O som fica neste celular — só vai para a internet se os pais ligarem o Gemini." }),
+                  (0, u.jsx)("p", { className: "font-body text-sm text-white", children: "Vamos ouvir você ler. O som fica neste celular." }),
                   (0, u.jsx)("button", {
                     type: "button",
                     onClick: () => { rememberMicExplained(); setNeedMicInfo(!1); startVoiceRecognition(); },
@@ -547,23 +464,17 @@ function ed({ deck: e, dueCards: t, aiSettings: aiCfg, onRate: n, onSaveSession:
           }) : (0, u.jsxs)("div", {
             className: "flex gap-3 animate-in fade-in-0",
             children: [
-              (0, u.jsxs)("button", {
+              (0, u.jsx)("button", {
                 type: "button",
                 onClick: () => b("again"),
-                className: "study-action flex-1 rounded-2xl flex flex-col items-center justify-center gap-1 bg-coral-dim border border-coral/30 text-coral",
-                children: [
-                  (0, u.jsx)("span", { className: "font-body text-lg font-semibold", children: "❌ Não sei" }),
-                  (0, u.jsx)("span", { className: "font-body text-xs opacity-80", children: "de novo já" })
-                ]
+                className: "study-action flex-1 rounded-2xl flex items-center justify-center bg-coral-dim border border-coral/30 text-coral font-body text-lg font-semibold",
+                children: "Não sei"
               }),
-              (0, u.jsxs)("button", {
+              (0, u.jsx)("button", {
                 type: "button",
                 onClick: () => b("good"),
-                className: "study-action flex-1 rounded-2xl flex flex-col items-center justify-center gap-1 bg-teal-dim border border-teal/30 text-teal",
-                children: [
-                  (0, u.jsx)("span", { className: "font-body text-lg font-semibold", children: "✅ Acertei" }),
-                  (0, u.jsx)("span", { className: "font-body text-xs opacity-80", children: v.good || "depois" })
-                ]
+                className: "study-action flex-1 rounded-2xl flex items-center justify-center status-ok font-body text-lg font-semibold",
+                children: "Acertei"
               })
             ]
           })
