@@ -9,14 +9,43 @@ function ec(e, fallbackText) {
   }
 }
 
+const PIN_LOCK_KEY = "leaki-parent-pin-lock";
+const PIN_LOCK_MAX = 5;
+const PIN_LOCK_MS = 30000;
+
+function readPinLock() {
+  try {
+    let raw = localStorage.getItem(PIN_LOCK_KEY);
+    if (!raw) return { fails: 0, until: 0 };
+    let parsed = JSON.parse(raw);
+    let until = Number(parsed.until) || 0;
+    let fails = Number(parsed.fails) || 0;
+    if (until && Date.now() >= until) return { fails: 0, until: 0 };
+    return { fails, until };
+  } catch (e) {
+    return { fails: 0, until: 0 };
+  }
+}
+
+function writePinLock(fails, until) {
+  try {
+    localStorage.setItem(PIN_LOCK_KEY, JSON.stringify({ fails, until: until || 0 }));
+  } catch (e) {}
+}
+
+function clearPinLock() {
+  try { localStorage.removeItem(PIN_LOCK_KEY); } catch (e) {}
+}
+
 function ParentAuthModal({ lock, onSaveLock, onSuccess, onClose }) {
   let needsSetup = !hasParentPin(lock);
+  let initialLock = readPinLock();
   let [mode, setMode] = (0, c.useState)(needsSetup ? "setup" : "unlock");
   let [pin, setPin] = (0, c.useState)("");
   let [pin2, setPin2] = (0, c.useState)("");
   let [error, setError] = (0, c.useState)("");
   let [busy, setBusy] = (0, c.useState)(!1);
-  let [fails, setFails] = (0, c.useState)(0);
+  let [fails, setFails] = (0, c.useState)(initialLock.fails);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -35,26 +64,41 @@ function ParentAuthModal({ lock, onSaveLock, onSuccess, onClose }) {
           return;
         }
         let next = await createParentPin(pin, lock || {});
-        if (onSaveLock) onSaveLock(persistableAISettings(next));
+        if (onSaveLock) await onSaveLock(persistableAISettings(next));
+        clearPinLock();
+        setFails(0);
         onSuccess(next);
         return;
       }
-      if (fails >= 5) {
+      let lockState = readPinLock();
+      if (lockState.until && Date.now() < lockState.until) {
         setError("Muitas tentativas. Espere um pouco e tente de novo.");
         setBusy(!1);
         return;
       }
+      if (lockState.until && Date.now() >= lockState.until) {
+        clearPinLock();
+        setFails(0);
+        lockState = { fails: 0, until: 0 };
+      }
       let unlocked = await unlockParentSettings(pin, lock);
       if (!unlocked) {
-        setFails(n => n + 1);
-        setError("PIN incorreto.");
+        let nextFails = (lockState.fails || fails) + 1;
+        let until = nextFails >= PIN_LOCK_MAX ? Date.now() + PIN_LOCK_MS : 0;
+        setFails(nextFails);
+        writePinLock(nextFails, until);
+        setError(until ? "Muitas tentativas. Espere um pouco e tente de novo." : "PIN incorreto.");
         setPin("");
         setBusy(!1);
         return;
       }
+      clearPinLock();
+      setFails(0);
       onSuccess(unlocked);
     } catch (err) {
-      setError("Não foi possível validar o PIN neste aparelho.");
+      setError(mode === "setup"
+        ? "Não foi possível criar o PIN neste aparelho."
+        : "Não foi possível validar o PIN neste aparelho.");
     }
     setBusy(!1);
   }
@@ -63,6 +107,8 @@ function ParentAuthModal({ lock, onSaveLock, onSuccess, onClose }) {
     if (!confirm("Isso apaga o PIN e a chave do Gemini salva. Os baralhos da criança ficam. Continuar?")) return;
     let next = resetParentPin(lock);
     if (onSaveLock) onSaveLock(next);
+    clearPinLock();
+    setFails(0);
     setMode("setup");
     setPin("");
     setPin2("");

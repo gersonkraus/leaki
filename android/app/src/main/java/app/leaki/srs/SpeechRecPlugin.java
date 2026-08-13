@@ -19,7 +19,6 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.util.ArrayList;
-import java.util.Locale;
 
 @CapacitorPlugin(
     name = "SpeechRec",
@@ -73,10 +72,19 @@ public class SpeechRecPlugin extends Plugin {
                 call.reject("unavailable");
                 return;
             }
+            if (activeCall != null) {
+                activeCall.reject("cancelled");
+                activeCall = null;
+            }
             destroyRecognizer();
             activeCall = call;
             recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+            final SpeechRecognizer session = recognizer;
             recognizer.setRecognitionListener(new RecognitionListener() {
+                private boolean belongsToSession() {
+                    return recognizer == session && activeCall == call;
+                }
+
                 @Override public void onReadyForSpeech(Bundle params) {}
                 @Override public void onBeginningOfSpeech() {}
                 @Override public void onRmsChanged(float rmsdB) {}
@@ -87,6 +95,7 @@ public class SpeechRecPlugin extends Plugin {
 
                 @Override
                 public void onError(int error) {
+                    if (!belongsToSession()) return;
                     PluginCall pending = activeCall;
                     activeCall = null;
                     destroyRecognizer();
@@ -95,6 +104,7 @@ public class SpeechRecPlugin extends Plugin {
 
                 @Override
                 public void onResults(Bundle results) {
+                    if (!belongsToSession()) return;
                     PluginCall pending = activeCall;
                     activeCall = null;
                     destroyRecognizer();
@@ -102,7 +112,7 @@ public class SpeechRecPlugin extends Plugin {
                     ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     String transcript = (list != null && !list.isEmpty()) ? list.get(0) : "";
                     JSObject ret = new JSObject();
-                    ret.put("transcript", transcript == null ? "" : transcript);
+                    ret.put("transcript", transcript);
                     pending.resolve(ret);
                 }
             });
@@ -152,6 +162,10 @@ public class SpeechRecPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        if (activeCall != null) {
+            activeCall.reject("cancelled");
+            activeCall = null;
+        }
         destroyRecognizer();
         super.handleOnDestroy();
     }

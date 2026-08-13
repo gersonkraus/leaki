@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync("src/utils.js", "utf8");
-const end = src.indexOf("const EDGE_TTS_VOICES");
-assert.ok(end > 0, "eval block not found");
+const start = src.indexOf("function rateSpeechAndTime");
+assert.ok(start >= 0, "rateSpeechAndTime not found in utils.js");
+const end = src.indexOf("\nconst EDGE_TTS_VOICES", start);
+assert.ok(end > start, "rateSpeechAndTime end missing");
 const api = new Function(
   src.slice(0, end) +
-    "\nfunction feedbackFromAccuracy(acc){return acc>=80?'ok':'bad';}\nreturn { calculateSpeechAccuracy, rateSpeechAndTime, rateManualAndTime, normalizeEvalRules, refineGeminiEvaluation, buildGeminiEvalPrompt };",
+    "\nreturn { calculateSpeechAccuracy, rateSpeechAndTime, rateManualAndTime, normalizeEvalRules, refineGeminiEvaluation, buildGeminiEvalPrompt, feedbackFromAccuracy, speechQuality };",
 )();
 
 const {
@@ -16,6 +18,8 @@ const {
   normalizeEvalRules,
   refineGeminiEvaluation,
   buildGeminiEvalPrompt,
+  feedbackFromAccuracy,
+  speechQuality,
 } = api;
 
 const defaults = normalizeEvalRules();
@@ -24,6 +28,12 @@ assert.equal(defaults.voiceHardMin, 50);
 assert.equal(defaults.oneLetterMax, 60);
 assert.equal(defaults.hintForcesHard, true);
 assert.equal(defaults.overtimeForcesHard, true);
+assert.equal(speechQuality(80), "excelente");
+assert.equal(speechQuality(50), "quase_la");
+assert.equal(speechQuality(49), "precisa_praticar");
+assert.match(feedbackFromAccuracy(80), /Excelente/);
+assert.match(feedbackFromAccuracy(50), /Quase/);
+assert.match(feedbackFromAccuracy(10), /Pratique/);
 
 assert.equal(rateSpeechAndTime(100, 3, 0, 7).rating, "good");
 assert.equal(rateSpeechAndTime(90, 9, 0, 7).rating, "hard");

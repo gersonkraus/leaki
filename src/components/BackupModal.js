@@ -22,11 +22,14 @@ function eBackup({ decks: e, cards: t, history: histList, aiSettings: aiCfg, onI
     }, null, 2);
   }
 
-  function S() {
-    shareBackupFile(k(), backupFilename()).then(kind => {
+  async function S() {
+    try {
+      let kind = await shareBackupFile(k(), backupFilename());
       y(kind === "shared" ? "Backup enviado. Abra no outro celular e toque em Importar." : "Arquivo .leaki baixado. Envie para o outro aparelho e importe lá.");
       b(null);
-    }).catch(err => b("Não foi possível compartilhar: " + (err && err.message ? err.message : err)));
+    } catch (err) {
+      b("Não foi possível compartilhar: " + (err && err.message ? err.message : err));
+    }
   }
 
   async function _() {

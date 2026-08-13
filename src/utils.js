@@ -50,6 +50,24 @@ function normalizeEvalRules(raw) {
   };
 }
 
+function speechQualityFromAcc(acc, rules) {
+  let cfg = normalizeEvalRules(rules);
+  if (acc >= cfg.voiceGoodMin) return "excelente";
+  if (acc >= cfg.voiceHardMin) return "quase_la";
+  return "precisa_praticar";
+}
+
+function feedbackFromAccuracy(acc, rules) {
+  let band = speechQualityFromAcc(acc, rules);
+  if (band === "excelente") return "🌟 Excelente leitura!";
+  if (band === "quase_la") return "🟨 Quase lá! Pratique o som.";
+  return "❌ Pratique mais uma vez.";
+}
+
+function speechQuality(acc, rules) {
+  return speechQualityFromAcc(acc, rules);
+}
+
 function calculateSpeechAccuracy(e, t, rules) {
   let n = normalizeStr(e),
     r = normalizeStr(t);
@@ -165,7 +183,7 @@ function refineGeminiEvaluation(parsed, expectedText, rules) {
     acc = Math.min(acc, local);
   }
   acc = Math.max(0, Math.min(100, Math.round(acc)));
-  let quality = acc >= cfg.voiceGoodMin ? "excelente" : acc >= cfg.voiceHardMin ? "quase_la" : "precisa_praticar";
+  let quality = speechQualityFromAcc(acc, cfg);
   return {
     spokenText: spoken,
     accuracy: acc,
@@ -481,14 +499,6 @@ async function synthesizeToDataUrl(text) {
   }
 }
 
-function feedbackFromAccuracy(acc) {
-  return acc >= 80 ? "🌟 Excelente leitura!" : acc >= 50 ? "🟨 Quase lá! Pratique o som." : "❌ Pratique mais uma vez.";
-}
-
-function speechQuality(acc) {
-  return acc >= 80 ? "excelente" : acc >= 50 ? "quase_la" : "precisa_praticar";
-}
-
 async function recognizeSpeechPt() {
   if (isNativeApp()) {
     let plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRec;
@@ -632,8 +642,8 @@ function hasParentPin(cfg) {
 function persistableAISettings(cfg) {
   let copy = Object.assign({}, cfg || {});
   if (copy.pinHash) {
-    if (copy.geminiKeyEnc || copy.geminiKey) copy.geminiKey = "";
-    if (copy.openaiKeyEnc || copy.openaiKey) copy.openaiKey = "";
+    delete copy.geminiKey;
+    delete copy.openaiKey;
   }
   return copy;
 }
@@ -710,12 +720,12 @@ async function sealOpenaiKey(cfg, plainKey) {
 function resetParentPin(cfg) {
   setUnlockedPin("");
   let next = Object.assign({}, cfg || {});
-  delete next.pinHash;
-  delete next.pinSalt;
-  delete next.geminiKeyEnc;
-  delete next.geminiKeyIv;
-  delete next.openaiKeyEnc;
-  delete next.openaiKeyIv;
+  next.pinHash = "";
+  next.pinSalt = "";
+  next.geminiKeyEnc = "";
+  next.geminiKeyIv = "";
+  next.openaiKeyEnc = "";
+  next.openaiKeyIv = "";
   next.geminiKey = "";
   next.openaiKey = "";
   return next;
@@ -764,14 +774,22 @@ async function shareBackupFile(jsonText, filename) {
   let name = filename || backupFilename();
   let plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LeakiShare;
   if (plugin && typeof plugin.shareTextFile === "function") {
-    await plugin.shareTextFile({ filename: name, content: jsonText });
-    return "shared";
+    try {
+      await plugin.shareTextFile({ filename: name, content: jsonText });
+      return "shared";
+    } catch (e) {
+      // cancel or plugin error: try the web share/download path
+    }
   }
   let blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
   let file = new File([blob], name, { type: "application/json" });
   if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
-    await navigator.share({ files: [file], title: "Backup Leaki" });
-    return "shared";
+    try {
+      await navigator.share({ files: [file], title: "Backup Leaki" });
+      return "shared";
+    } catch (e) {
+      if (!e || e.name !== "AbortError") throw e;
+    }
   }
   let url = URL.createObjectURL(blob);
   let a = document.createElement("a");
@@ -780,9 +798,9 @@ async function shareBackupFile(jsonText, filename) {
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
-    document.body.removeChild(a);
+    if (a.parentNode) a.parentNode.removeChild(a);
     URL.revokeObjectURL(url);
-  }, 300);
+  }, 60000);
   return "downloaded";
 }
 

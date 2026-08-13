@@ -5,19 +5,25 @@ function em({ initial: e, onSave: t, onCancel: n }) {
     [d, f] = (0, c.useState)(e?.backAudio),
     [timeSec, setTimeSec] = (0, c.useState)(e?.readingTime ? Number(e.readingTime) : 7),
     [saving, setSaving] = (0, c.useState)(!1);
+  let mountedRef = (0, c.useRef)(!0);
+  (0, c.useEffect)(() => () => { mountedRef.current = !1; }, []);
 
   return (0, u.jsxs)("form", {
     className: "space-y-4",
     onSubmit: async ev => {
       ev.preventDefault();
-      if (!r.trim() || saving) return;
+      let frontText = r.trim();
+      let backText = l.trim() || "";
+      let limit = Number(timeSec) || 7;
+      if (!frontText || saving) return;
       let frontAud = o;
       if (!frontAud && isEdgeTTSVoice(getTTSVoiceName()) && isOnline()) {
         setSaving(!0);
-        try { frontAud = await synthesizeToDataUrl(r.trim()) || o; } catch (err) { frontAud = o; }
-        setSaving(!1);
+        try { frontAud = await synthesizeToDataUrl(frontText) || o; } catch (err) { frontAud = o; }
+        if (mountedRef.current) setSaving(!1);
       }
-      t(r.trim(), l.trim() || "", frontAud, d, Number(timeSec) || 7);
+      if (!mountedRef.current) return;
+      t(frontText, backText, frontAud, d, limit);
     },
     children: [
       (0, u.jsxs)("div", {
@@ -26,10 +32,11 @@ function em({ initial: e, onSave: t, onCancel: n }) {
           (0, u.jsx)("textarea", {
             autoFocus: !0,
             value: r,
+            disabled: saving,
             onChange: e => a(e.target.value),
             rows: 2,
             placeholder: "ex.: BOLA ou O cachorro late",
-            className: "mt-1.5 w-full bg-base-raised border border-base-line rounded-xl px-3 py-2.5 outline-none focus:border-violet transition-colors resize-none text-white text-sm"
+            className: "mt-1.5 w-full bg-base-raised border border-base-line rounded-xl px-3 py-2.5 outline-none focus:border-violet transition-colors resize-none text-white text-sm disabled:opacity-50"
           }),
           (0, u.jsx)(eh, { label: "frente", value: o, onChange: s })
         ]
@@ -100,7 +107,8 @@ function em({ initial: e, onSave: t, onCancel: n }) {
           (0, u.jsx)("button", {
             type: "button",
             onClick: n,
-            className: "font-body text-xs font-medium rounded-full px-4 py-2 text-ink-soft hover:text-ink hover:bg-base-raised transition-colors",
+            disabled: saving,
+            className: "font-body text-xs font-medium rounded-full px-4 py-2 text-ink-soft hover:text-ink hover:bg-base-raised transition-colors disabled:opacity-40",
             children: "cancelar"
           }),
           (0, u.jsx)("button", {

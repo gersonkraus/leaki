@@ -93,7 +93,7 @@ function eParentStats({ history: e, cards: cardsList, aiSettings: aiCfg, onSaveA
             children: [
               (0, u.jsx)("p", { className: "font-display font-medium text-white", children: "Esta semana" }),
               (0, u.jsxs)("p", { className: "text-sm text-ink-soft", children: [digest.sessions, " sessões · cerca de ", digest.minutes, " min"] }),
-              digest.voiceAvg != null ? (0, u.jsxs)("p", { className: "text-sm text-white", children: ["Leitura em voz: ", digest.voiceAvg, "% de acerto (", digest.voiceCount, " tentativas)"] }) : (0, u.jsx)("p", { className: "text-sm text-ink-soft", children: "Ainda não houve leitura em voz nesta semana." }),
+              digest.voiceAvg !== null ? (0, u.jsxs)("p", { className: "text-sm text-white", children: ["Leitura em voz: ", digest.voiceAvg, "% de acerto (", digest.voiceCount, " tentativas)"] }) : (0, u.jsx)("p", { className: "text-sm text-ink-soft", children: "Ainda não houve leitura em voz nesta semana." }),
               digest.hardWords.length ? (0, u.jsxs)("div", {
                 children: [
                   (0, u.jsx)("p", { className: "text-xs text-amber font-semibold mt-1", children: "Travou nestas palavras:" }),

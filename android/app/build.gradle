@@ -21,9 +21,14 @@ android {
         signingConfigs {
             release {
                 storeFile file(leakiStore)
-                storePassword System.getenv("LEAKI_STORE_PASSWORD") ?: ""
+                def storePassword = System.getenv("LEAKI_STORE_PASSWORD")
+                def keyPassword = System.getenv("LEAKI_KEY_PASSWORD")
+                if (!storePassword || !keyPassword) {
+                    throw new GradleException("LEAKI_STORE_PASSWORD and LEAKI_KEY_PASSWORD are required for release signing")
+                }
+                storePassword storePassword
                 keyAlias System.getenv("LEAKI_KEY_ALIAS") ?: "leaki"
-                keyPassword System.getenv("LEAKI_KEY_PASSWORD") ?: ""
+                keyPassword keyPassword
             }
         }
     }

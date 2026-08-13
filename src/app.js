@@ -64,10 +64,10 @@ document.head.appendChild(eg);
 
       async function handleSaveAISettings(newCfg) {
         let merged = Object.assign({}, aiSettings, newCfg);
-        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "geminiKey")) {
+        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "geminiKey") && !newCfg.geminiKeyEnc) {
           merged = await sealGeminiKey(merged, newCfg.geminiKey);
         }
-        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "openaiKey")) {
+        if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, "openaiKey") && !newCfg.openaiKeyEnc) {
           merged = await sealOpenaiKey(merged, newCfg.openaiKey);
         }
         setAISettings(merged);

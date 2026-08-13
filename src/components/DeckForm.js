@@ -85,11 +85,11 @@ function ep({ initial: e, onSave: t, onCancel: n }) {
               }),
               (0, u.jsx)("button", {
                 type: "button",
-                onClick: () => setRequireSpeech(e => {
-                  let next = !e;
+                onClick: () => {
+                  let next = !requireSpeech;
                   if (next) setSkipRec(!1);
-                  return next;
-                }),
+                  setRequireSpeech(next);
+                },
                 className: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 " + (requireSpeech ? "bg-violet" : "bg-base-strong"),
                 children: (0, u.jsx)("span", {
                   className: "inline-block h-4 w-4 transform rounded-full bg-white transition-transform " + (requireSpeech ? "translate-x-6" : "translate-x-1")
