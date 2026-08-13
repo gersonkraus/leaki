@@ -8,7 +8,7 @@ assert.ok(src.indexOf("function requestContentSuggestions") >= 0, "requestConten
 
 const api = new Function(
   src +
-    "\nreturn { buildLearnerEvidence, canRequestContentSuggestions, parseContentSuggestions, buildContentSuggestPrompt, buildContentSuggestUserMessage, resolveSuggestSystemPrompt, interpolateSuggestPrompt, buildSuggestPromptVars, formatSuggestLogs, skillSlug, DEFAULT_SUGGEST_SYSTEM_PROMPT, pickContentSuggestBackend, pruneContentInbox, suggestionReadingTime, parseJsonLoose };"
+    "\nreturn { buildLearnerEvidence, canRequestContentSuggestions, parseContentSuggestions, buildContentSuggestPrompt, buildContentSuggestUserMessage, resolveSuggestSystemPrompt, interpolateSuggestPrompt, buildSuggestPromptVars, formatSuggestLogs, skillSlug, DEFAULT_SUGGEST_SYSTEM_PROMPT, pickContentSuggestBackend, pruneContentInbox, collapseDuplicateCards, cardDedupeKey, suggestionReadingTime, parseJsonLoose };"
 )();
 
 const {
@@ -25,6 +25,7 @@ const {
   DEFAULT_SUGGEST_SYSTEM_PROMPT,
   pickContentSuggestBackend,
   pruneContentInbox,
+  collapseDuplicateCards,
   suggestionReadingTime,
   parseJsonLoose,
 } = api;
@@ -146,6 +147,19 @@ assert.match(panel, /Pedir sugestões à IA/);
 assert.match(panel, /suggestSystemPrompt|Prompt do sistema/);
 assert.match(panel, /\{\{logs\}\}/);
 assert.match(panel, /Adicionar skill/);
+assert.match(panel, /Liberar todas/);
+assert.deepEqual(
+  collapseDuplicateCards([
+    { id: "1", deckId: "d1", front: "NAVE", reps: 0 },
+    { id: "2", deckId: "d1", front: "nave", reps: 0 },
+    { id: "3", deckId: "d2", front: "NAVE", reps: 0 },
+  ]).map((c) => c.id).sort(),
+  ["1", "3"],
+);
+assert.equal(pruneContentInbox([
+  { id: "a", status: "pending", front: "NAVE" },
+  { id: "b", status: "pending", front: "nave" },
+]).length, 1);
 assert.doesNotMatch(panel, /onApproveCards\(\s*result/);
 assert.match(readFileSync("src/app.js", "utf8"), /buildNewCard/);
 assert.match(src, /x-goog-api-key/);

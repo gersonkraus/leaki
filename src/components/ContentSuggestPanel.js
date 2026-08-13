@@ -10,6 +10,8 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
   let [busy, setBusy] = (0, c.useState)(!1);
   let [msg, setMsg] = (0, c.useState)(null);
   let [err, setErr] = (0, c.useState)(null);
+  let [quickDeckId, setQuickDeckId] = (0, c.useState)((decks && decks[0] && decks[0].id) || "");
+  let releasingRef = (0, c.useRef)(new Set());
   let evidence = (0, c.useMemo)(
     () => buildLearnerEvidence(history, cards, decks, { interests, difficulties }),
     [history, cards, decks, interests, difficulties]
@@ -68,7 +70,7 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
         createdAt: new Date().toISOString(),
         deckId: matchDeckHint(decks, item.deckHint) || (decks && decks.length === 1 ? decks[0].id : "")
       }, item));
-      persistInbox(stamped.concat(inbox));
+      persistInbox(pruneContentInbox(stamped.concat(inbox)));
       setMsg(result.items.length + " sugestões prontas. Nada foi inserido nos baralhos.");
     } catch (e) {
       setErr(e && e.message ? e.message : String(e));
@@ -84,20 +86,36 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
     persistInbox(inbox.map(item => item.id === id ? Object.assign({}, item, { status: "discarded" }) : item));
   }
 
-  function releaseItem(item) {
-    if (!item.deckId) {
+  function releaseItems(items) {
+    let batch = [];
+    let ids = new Set();
+    (items || []).forEach(item => {
+      if (!item || item.status !== "pending" || releasingRef.current.has(item.id)) return;
+      let deckId = item.deckId || quickDeckId;
+      if (!deckId || !String(item.front || "").trim()) return;
+      releasingRef.current.add(item.id);
+      ids.add(item.id);
+      batch.push({
+        deckId,
+        front: item.front,
+        back: item.back,
+        kind: item.kind,
+        readingTime: suggestionReadingTime(item.kind)
+      });
+    });
+    if (!batch.length) {
       setErr("Escolha o baralho antes de liberar.");
-      return;
+      return 0;
     }
-    if (!onApproveCards) return;
-    onApproveCards([{
-      deckId: item.deckId,
-      front: item.front,
-      back: item.back,
-      readingTime: suggestionReadingTime(item.kind)
-    }]);
-    persistInbox(inbox.map(cur => cur.id === item.id ? Object.assign({}, cur, { status: "inserted" }) : cur));
+    if (onApproveCards) onApproveCards(batch);
+    persistInbox(inbox.map(cur => ids.has(cur.id) ? Object.assign({}, cur, { status: "inserted", deckId: cur.deckId || quickDeckId }) : cur));
     setErr(null);
+    return batch.length;
+  }
+
+  function releaseItem(item) {
+    let n = releaseItems([item]);
+    if (!n) return;
     setMsg("Ficha liberada no baralho.");
     setTimeout(() => setMsg(null), 2500);
   }
@@ -280,12 +298,46 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
               (0, u.jsx)("p", { className: "text-xs text-ink-soft mt-0.5", children: backend ? "A lista segue o prompt preenchido (dificuldade, interesses, logs, skills). Você libera uma a uma." : "Configure Gemini ou OpenAI na aba IA para pedir a lista." })
             ]
           }),
-          (0, u.jsx)("button", {
-            type: "button",
-            disabled: busy || !backend,
-            onClick: handleAskAI,
-            className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-violet text-white hover:bg-violet-light disabled:opacity-40 transition-colors",
-            children: busy ? "Analisando logs…" : "Pedir sugestões à IA"
+          (0, u.jsxs)("div", {
+            className: "flex flex-wrap gap-2 items-center",
+            children: [
+              (0, u.jsx)("button", {
+                type: "button",
+                disabled: busy || !backend,
+                onClick: handleAskAI,
+                className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-violet text-white hover:bg-violet-light disabled:opacity-40 transition-colors",
+                children: busy ? "Analisando logs…" : "Pedir sugestões à IA"
+              }),
+              pending.length ? (0, u.jsxs)("select", {
+                value: quickDeckId,
+                onChange: ev => setQuickDeckId(ev.target.value),
+                "aria-label": "Baralho da liberação rápida",
+                className: "bg-base-raised border border-base-line rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-violet",
+                children: [
+                  (0, u.jsx)("option", { value: "", children: "Baralho da liberação rápida…" }),
+                  (decks || []).map(deck => (0, u.jsx)("option", { value: deck.id, children: deck.name }, deck.id))
+                ]
+              }) : null,
+              pending.length ? (0, u.jsx)("button", {
+                type: "button",
+                disabled: !quickDeckId && !(decks && decks.length === 1),
+                onClick: () => {
+                  let deckId = quickDeckId || (decks && decks[0] && decks[0].id) || "";
+                  if (!deckId) {
+                    setErr("Escolha o baralho da liberação rápida.");
+                    return;
+                  }
+                  setQuickDeckId(deckId);
+                  let n = releaseItems(pending.map(item => Object.assign({}, item, { deckId: item.deckId || deckId })));
+                  if (n) {
+                    setMsg(n + " ficha(s) liberada(s).");
+                    setTimeout(() => setMsg(null), 2500);
+                  }
+                },
+                className: "font-body text-xs font-medium rounded-full px-4 py-2 bg-teal text-white disabled:opacity-40",
+                children: "Liberar todas"
+              }) : null
+            ]
           }),
           pending.length === 0 ? (0, u.jsx)("p", { className: "text-xs text-ink-soft font-mono py-2", children: "Nenhuma sugestão esperando liberação." }) : pending.map(item => (0, u.jsxs)("div", {
             className: "p-3 rounded-xl bg-base-raised/70 border border-base-line space-y-2",
@@ -314,7 +366,7 @@ function eContentSuggest({ history, cards, decks, aiCfg, onSaveAI, onApproveCard
                 className: "flex flex-wrap gap-2 items-center pt-1",
                 children: [
                   (0, u.jsxs)("select", {
-                    value: item.deckId || "",
+                    value: item.deckId || quickDeckId || "",
                     onChange: ev => updateItem(item.id, { deckId: ev.target.value }),
                     className: "flex-1 min-w-[8rem] bg-base-surface border border-base-line rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-violet",
                     children: [

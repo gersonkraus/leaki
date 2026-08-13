@@ -19,6 +19,8 @@ const MIME = {
 const CORS_ORIGINS = new Set([
   "https://leaki.gerson.com",
   "http://leaki.gerson.com",
+  "https://leaki.gersonkraus.com",
+  "http://leaki.gersonkraus.com",
   "https://localhost",
   "http://localhost",
   "http://127.0.0.1",
@@ -26,12 +28,18 @@ const CORS_ORIGINS = new Set([
   "capacitor://localhost"
 ]);
 
-function allowOrigin(origin) {
+export function allowOrigin(origin) {
   if (!origin) return "";
   if (CORS_ORIGINS.has(origin)) return origin;
   try {
     let u = new URL(origin);
-    if (u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "leaki.gerson.com") {
+    if (
+      u.hostname === "localhost"
+      || u.hostname === "127.0.0.1"
+      || u.hostname === "leaki.gerson.com"
+      || u.hostname === "leaki.gersonkraus.com"
+      || u.hostname.endsWith(".gersonkraus.com")
+    ) {
       return origin;
     }
   } catch (e) {}
@@ -42,7 +50,7 @@ function setCors(req, res) {
   let origin = allowOrigin(String(req.headers.origin || ""));
   if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET,PUT,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, If-Match");
   res.setHeader("Access-Control-Max-Age", "600");
 }
@@ -165,6 +173,104 @@ async function handleSync(req, res, store, keyRaw) {
   sendJson(res, 405, { error: "method-not-allowed" });
 }
 
+async function callGeminiSuggest({ apiKey, model, systemPrompt, userMessage }) {
+  let url = "https://generativelanguage.googleapis.com/v1beta/models/" + (model || "gemini-2.0-flash") + ":generateContent";
+  let response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt || "" }] },
+      contents: [{ parts: [{ text: userMessage || "" }] }],
+      generationConfig: {
+        temperature: 0.3,
+        responseMimeType: "application/json"
+      }
+    })
+  });
+  let text = await response.text();
+  if (!response.ok) {
+    let err = new Error("Erro na API Gemini (" + response.status + ")");
+    err.detail = text.slice(0, 300);
+    throw err;
+  }
+  let data = JSON.parse(text);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+}
+
+async function callOpenAISuggest({ apiKey, systemPrompt, userMessage }) {
+  let response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt || "" },
+        { role: "user", content: userMessage || "" }
+      ]
+    })
+  });
+  let text = await response.text();
+  if (!response.ok) {
+    let err = new Error("Erro na API OpenAI (" + response.status + ")");
+    err.detail = text.slice(0, 300);
+    throw err;
+  }
+  let data = JSON.parse(text);
+  return data.choices?.[0]?.message?.content || "{}";
+}
+
+async function handleSuggest(req, res) {
+  setCors(req, res);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "method-not-allowed" });
+    return;
+  }
+  let ip = String(req.socket.remoteAddress || "unknown");
+  if (rateLimited(ip)) {
+    sendJson(res, 429, { error: "too-many-requests" });
+    return;
+  }
+  let raw;
+  try {
+    raw = await readBody(req, 200_000);
+  } catch (err) {
+    sendJson(res, err.status || 400, { error: err.message === "too-large" ? "body-too-large" : err.message });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (e) {
+    sendJson(res, 400, { error: "invalid-json" });
+    return;
+  }
+  let apiKey = String(payload.apiKey || "").trim();
+  let backend = payload.backend === "openai" ? "openai" : "gemini";
+  if (!apiKey) {
+    sendJson(res, 400, { error: "missing-key" });
+    return;
+  }
+  try {
+    let text = backend === "openai"
+      ? await callOpenAISuggest(payload)
+      : await callGeminiSuggest(payload);
+    sendJson(res, 200, { text });
+  } catch (err) {
+    console.error("suggest proxy:", err.message, err.detail || "");
+    sendJson(res, 502, { error: err.message || "suggest-failed" });
+  }
+}
+
 export function createLeakiServer({ www, dataDir }) {
   const store = createSyncStore(join(dataDir, "sync"));
   return createServer((req, res) => {
@@ -178,6 +284,10 @@ export function createLeakiServer({ www, dataDir }) {
     }
     if (urlPath === "/tts" && req.method === "POST") {
       handleTTS(req, res);
+      return;
+    }
+    if (urlPath === "/suggest") {
+      handleSuggest(req, res);
       return;
     }
     if (urlPath.startsWith("/sync/")) {

@@ -169,20 +169,26 @@ document.head.appendChild(eg);
 
       function handleApproveSuggestedCards(items) {
         if (!items || !items.length) return;
+        let prepared = [];
+        let seen = new Set();
+        items.forEach(item => {
+          if (!item || !item.deckId || !String(item.front || "").trim()) return;
+          let key = cardDedupeKey(item);
+          if (seen.has(key)) return;
+          seen.add(key);
+          prepared.push(buildNewCard({
+            deckId: item.deckId,
+            front: String(item.front).trim(),
+            back: String(item.back || "").trim(),
+            frontAudio: item.frontAudio,
+            backAudio: item.backAudio,
+            readingTime: item.readingTime || suggestionReadingTime(item.kind)
+          }));
+        });
+        if (!prepared.length) return;
         r(prev => {
-          let next = prev.slice();
-          items.forEach(item => {
-            if (!item || !item.deckId || !String(item.front || "").trim()) return;
-            next.push(buildNewCard({
-              deckId: item.deckId,
-              front: String(item.front).trim(),
-              back: String(item.back || "").trim(),
-              frontAudio: item.frontAudio,
-              backAudio: item.backAudio,
-              readingTime: item.readingTime || suggestionReadingTime(item.kind)
-            }));
-          });
-          return next;
+          let have = new Set((prev || []).map(cardDedupeKey));
+          return collapseDuplicateCards(prev.concat(prepared.filter(card => !have.has(cardDedupeKey(card)))));
         });
       }
 

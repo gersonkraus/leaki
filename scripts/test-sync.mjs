@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSyncStore, isValidPairKey, normalizePairKey, sanitizeSnapshot } from "./sync-store.mjs";
-import { createLeakiServer } from "./leaki-server.mjs";
+import { createLeakiServer, allowOrigin } from "./leaki-server.mjs";
 
 const src = readFileSync(new URL("../src/utils.js", import.meta.url), "utf8");
 const api = new Function(
@@ -77,6 +77,8 @@ assert.equal(health.ok, true);
 assert.equal((await fetch(base + "/")).status, 200);
 assert.equal((await fetch(base + "/sync/nope")).status, 400);
 assert.equal((await fetch(base + "/sync/" + key)).status, 404);
+assert.equal(allowOrigin("https://leaki.gersonkraus.com"), "https://leaki.gersonkraus.com");
+assert.equal((await fetch(base + "/suggest", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).status, 400);
 
 const put1 = await fetch(base + "/sync/" + key, {
   method: "PUT",

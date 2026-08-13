@@ -1172,6 +1172,45 @@ async function suggestContentWithOpenAI(userMessage, apiKey, systemPrompt) {
   return parseJsonLoose(data.choices?.[0]?.message?.content || "{}");
 }
 
+function canUseSuggestProxy() {
+  try {
+    if (isNativeApp()) return !1;
+    return typeof location !== "undefined" && /^https?:$/.test(location.protocol);
+  } catch (e) {
+    return !1;
+  }
+}
+
+function friendlySuggestError(err, backend) {
+  let msg = err && err.message ? err.message : String(err);
+  if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(msg)) {
+    return new Error("O navegador bloqueou a " + (backend === "openai" ? "OpenAI" : "Gemini") + ". Confira a chave na aba IA e use o site pelo túnel (https://leaki.gersonkraus.com).");
+  }
+  return err instanceof Error ? err : new Error(msg);
+}
+
+async function suggestViaProxy(payload) {
+  let res = await fetch("/suggest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  let data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Erro ao gerar sugestões (" + res.status + ")");
+  return parseJsonLoose(data.text || "{}");
+}
+
+async function requestSuggestJson({ backend, apiKey, model, systemPrompt, userMessage }) {
+  if (canUseSuggestProxy()) {
+    try {
+      return await suggestViaProxy({ backend, apiKey, model, systemPrompt, userMessage });
+    } catch (e) {}
+  }
+  return backend === "openai"
+    ? await suggestContentWithOpenAI(userMessage, apiKey, systemPrompt)
+    : await suggestContentWithGemini(userMessage, apiKey, model, systemPrompt);
+}
+
 async function requestContentSuggestions({ history, cards, decks, aiCfg, nowMs }) {
   let evidence = buildLearnerEvidence(history, cards, decks, {
     interests: aiCfg && aiCfg.learnerInterests,
@@ -1185,9 +1224,19 @@ async function requestContentSuggestions({ history, cards, decks, aiCfg, nowMs }
   let vars = buildSuggestPromptVars(evidence, aiCfg && aiCfg.suggestSkills);
   let systemPrompt = interpolateSuggestPrompt(resolveSuggestSystemPrompt(aiCfg && aiCfg.suggestSystemPrompt), vars);
   let userMessage = buildContentSuggestUserMessage(evidence);
-  let raw = backend === "openai"
-    ? await suggestContentWithOpenAI(userMessage, aiCfg.openaiKey, systemPrompt)
-    : await suggestContentWithGemini(userMessage, aiCfg.geminiKey, aiCfg.geminiModel, systemPrompt);
+  let apiKey = backend === "openai" ? aiCfg.openaiKey : aiCfg.geminiKey;
+  let raw;
+  try {
+    raw = await requestSuggestJson({
+      backend,
+      apiKey,
+      model: aiCfg.geminiModel,
+      systemPrompt,
+      userMessage
+    });
+  } catch (err) {
+    throw friendlySuggestError(err, backend);
+  }
   let items = parseContentSuggestions(raw, evidence.existingFronts);
   if (!items.length) throw new Error("A IA não devolveu fichas novas. Revise o perfil ou tente depois de mais estudos.");
   return { backend, evidence, items };
@@ -1223,8 +1272,42 @@ function buildNewCard({ deckId, front, back, frontAudio, backAudio, readingTime 
   };
 }
 
+function cardDedupeKey(card) {
+  return String(card && card.deckId || "") + "\0" + normalizeStr(card && card.front);
+}
+
+function collapseDuplicateCards(cards) {
+  let map = new Map();
+  (cards || []).forEach(card => {
+    if (!card || !String(card.front || "").trim()) return;
+    let key = cardDedupeKey(card);
+    let prev = map.get(key);
+    if (!prev) {
+      map.set(key, card);
+      return;
+    }
+    let prevReps = Number(prev.reps) || 0;
+    let nextReps = Number(card.reps) || 0;
+    map.set(key, nextReps > prevReps ? card : prev);
+  });
+  return Array.from(map.values());
+}
+
+function dedupeContentInbox(list) {
+  let seen = new Set();
+  let out = [];
+  (Array.isArray(list) ? list : []).slice().reverse().forEach(item => {
+    if (!item) return;
+    let key = String(item.status || "pending") + ":" + (item.front ? normalizeStr(item.front) : String(item.id || Math.random()));
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(item);
+  });
+  return out.reverse();
+}
+
 function pruneContentInbox(list) {
-  let items = Array.isArray(list) ? list.slice() : [];
+  let items = dedupeContentInbox(list);
   let pending = items.filter(item => item && item.status === "pending");
   let done = items.filter(item => item && item.status !== "pending").slice(-20);
   return pending.concat(done).slice(0, 40);
@@ -1344,7 +1427,7 @@ function mergeSyncSnapshot(local, remote) {
   let right = remote || {};
   return {
     decks: mergeById(left.decks, right.decks),
-    cards: mergeById(left.cards, right.cards),
+    cards: collapseDuplicateCards(mergeById(left.cards, right.cards)),
     history: mergeHistory(left.history, right.history),
     aiSettings: mergeAiSettingsForSync(left.aiSettings, right.aiSettings)
   };
